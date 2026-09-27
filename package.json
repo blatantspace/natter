@@ -17,13 +17,31 @@
   "build": {
     "appId": "guide.queueue.app",
     "productName": "queueue",
-    "directories": { "output": "dist" },
-    "files": ["out/**/*", "package.json"],
-    "asarUnpack": ["**/*.node", "**/prebuilds/**"],
-    "protocols": [{ "name": "queueue invite", "schemes": ["queueue"] }],
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/*.node",
+      "**/prebuilds/**"
+    ],
+    "protocols": [
+      {
+        "name": "queueue invite",
+        "schemes": [
+          "queueue"
+        ]
+      }
+    ],
     "mac": {
       "category": "public.app-category.social-networking",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "identity": null
     }
   },
@@ -46,6 +64,7 @@
     "electron": "^44.4.5",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
+    "epubjs": "^0.3.93",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "typescript": "^5.7.3",

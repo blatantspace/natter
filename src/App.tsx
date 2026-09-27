@@ -9,6 +9,8 @@ import { IconChevron, IconGear, IconPlus, IconQueue, IconSearch, IconShare, Icon
 import { Mosaic } from "./components/Mosaic";
 import { Onboarding } from "./components/Onboarding";
 import { ShareSheet } from "./components/ShareSheet";
+import { Viewer } from "./components/Viewer";
+import { viewFor } from "./playable";
 
 type Sort = "new" | "talk" | "unread";
 
@@ -39,6 +41,7 @@ function Home({ state }: { state: AppState }) {
   const [sort, setSort] = useState<Sort>("new");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [viewingId, setViewingId] = useState<string | null>(null);
   const [sharePaths, setSharePaths] = useState<string[] | null>(null);
   const [dialog, setDialog] = useState<"invite" | "settings" | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -83,6 +86,15 @@ function Home({ state }: { state: AppState }) {
   }, [state.posts, filter, person, query, sort, members]);
 
   const selected = selectedId ? state.posts.find((p) => p.id === selectedId) : undefined;
+  const viewing = viewingId ? state.posts.find((p) => p.id === viewingId && p.localPath) : undefined;
+
+  const openTile = (id: string) => {
+    const post = state.posts.find((p) => p.id === id);
+    if (post?.localPath && viewFor(post)) {
+      setViewingId(id);
+      setSelectedId(null);
+    } else setSelectedId(id);
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -230,7 +242,7 @@ function Home({ state }: { state: AppState }) {
           </button>
         </div>
 
-        <div className="filters">
+        <div className="filters" hidden={!!viewing}>
           <button className={`chip${filter === "all" ? " active" : ""}`} onClick={() => setFilter("all")}>
             Everything <span className="count">{counts.all}</span>
           </button>
@@ -258,7 +270,20 @@ function Home({ state }: { state: AppState }) {
         </div>
 
         <div className="main-body">
-          <div className="mosaic-scroll">
+          {viewing ? (
+            <Viewer
+              key={`view-${viewing.id}`}
+              post={viewing}
+              chatOpen={selectedId === viewing.id}
+              onToggleChat={() => setSelectedId(selectedId === viewing.id ? null : viewing.id)}
+              onClose={() => {
+                setViewingId(null);
+                setSelectedId(null);
+              }}
+              onError={(m) => flash(m, true)}
+            />
+          ) : null}
+          <div className="mosaic-scroll" hidden={!!viewing}>
             {state.posts.length === 0 ? (
               <div className="empty">
                 <div className="drop-box">
@@ -280,17 +305,19 @@ function Home({ state }: { state: AppState }) {
                 <p>Nothing matches that. Try another filter.</p>
               </div>
             ) : (
-              <Mosaic posts={visible} members={members} transfers={state.transfers} selectedId={selectedId} onOpen={setSelectedId} />
+              <Mosaic posts={visible} members={members} transfers={state.transfers} selectedId={selectedId} onOpen={openTile} />
             )}
           </div>
           {selected ? (
             <DetailSheet
-              key={selected.id}
+              key={`sheet-${selected.id}`}
               post={selected}
               members={members}
               transfer={state.transfers[selected.id]}
               onClose={() => setSelectedId(null)}
               onError={(m) => flash(m, true)}
+              onPlay={viewing?.id === selected.id ? undefined : () => setViewingId(selected.id)}
+              compact={viewing?.id === selected.id}
             />
           ) : null}
         </div>

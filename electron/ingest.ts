@@ -19,10 +19,10 @@ const EXT: Record<FileKind, string[]> = {
 };
 
 const MIME: Record<string, string> = {
-  mp4: "video/mp4", m4v: "video/mp4", mov: "video/quicktime", mkv: "video/x-matroska", webm: "video/webm", avi: "video/x-msvideo",
+  mp4: "video/mp4", m4v: "video/mp4", mov: "video/mp4", mkv: "video/webm", webm: "video/webm", avi: "video/x-msvideo",
   mp3: "audio/mpeg", flac: "audio/flac", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", opus: "audio/opus", aiff: "audio/aiff",
   jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp", heic: "image/heic", avif: "image/avif", tif: "image/tiff", tiff: "image/tiff",
-  pdf: "application/pdf", epub: "application/epub+zip", txt: "text/plain", md: "text/markdown", zip: "application/zip", srt: "text/plain", vtt: "text/vtt",
+  pdf: "application/pdf", epub: "application/epub+zip", txt: "text/plain; charset=utf-8", md: "text/plain; charset=utf-8", zip: "application/zip", srt: "text/plain", vtt: "text/vtt",
 };
 
 const BOOK_EXT = new Set(["epub", "mobi", "azw3", "cbz", "cbr", "djvu"]);

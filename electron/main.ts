@@ -4,7 +4,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, powerMonit
 import { dataDir, loadIdentity, loadSettings, saveIdentity, saveSettings, type KeyPair } from "./config";
 import * as groups from "./groups";
 import { Engine } from "./engine";
-import { scanSources, type LocalFile } from "./ingest";
+import { Readable } from "node:stream";
+import { mimeFor, scanSources, type LocalFile } from "./ingest";
 import { fetchArtwork, searchMetadata } from "./metadata";
 import type { AppState, Candidate, Identity, Kind, PostMeta, PublishInput, Settings, ShareDraft } from "../shared/types";
 
@@ -118,6 +119,7 @@ function createWindow() {
       preload: path.join(import.meta.dirname, "../preload/preload.cjs"),
       contextIsolation: true,
       sandbox: true,
+      plugins: true,
     },
   });
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -137,10 +139,34 @@ function createWindow() {
   });
 }
 
+function serveLocal(req: Request, url: URL): Response {
+  const [, postId, ...rest] = url.pathname.split("/");
+  const dir = engine?.localPath(postId);
+  if (!dir) return new Response(null, { status: 404 });
+  const target = path.resolve(dir, rest.map(decodeURIComponent).join("/"));
+  if (!target.startsWith(dir + path.sep) || !fs.existsSync(target)) return new Response(null, { status: 404 });
+  const size = fs.statSync(target).size;
+  const headers: Record<string, string> = { "content-type": mimeFor(target), "accept-ranges": "bytes" };
+  const range = /bytes=(\d*)-(\d*)/.exec(req.headers.get("range") ?? "");
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) return new Response(null, { status: 416, headers: { "content-range": `bytes */${size}` } });
+    const body = Readable.toWeb(fs.createReadStream(target, { start, end })) as ReadableStream;
+    return new Response(body, {
+      status: 206,
+      headers: { ...headers, "content-range": `bytes ${start}-${end}/${size}`, "content-length": String(end - start + 1) },
+    });
+  }
+  const body = Readable.toWeb(fs.createReadStream(target)) as ReadableStream;
+  return new Response(body, { headers: { ...headers, "content-length": String(size) } });
+}
+
 function registerProtocol() {
   protocol.handle("qq", async (req) => {
     const url = new URL(req.url);
     const memberKey = url.hostname;
+    if (memberKey === "local") return serveLocal(req, url);
     const filePath = decodeURIComponent(url.pathname);
     if (url.searchParams.has("local")) {
       const draft = drafts.get(memberKey);

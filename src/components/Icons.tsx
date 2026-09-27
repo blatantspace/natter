@@ -281,6 +281,22 @@ export function IconExternal(props: IconProps) {
   );
 }
 
+export function IconPlay(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 3.2v9.6L12.5 8z" fill="currentColor" />
+    </Svg>
+  );
+}
+
+export function IconArrow({ dir = "left", ...props }: IconProps & { dir?: "left" | "right" }) {
+  return (
+    <Svg {...props}>
+      <path d={dir === "left" ? "M10 3.5L5.5 8l4.5 4.5" : "M6 3.5L10.5 8 6 12.5"} />
+    </Svg>
+  );
+}
+
 export function IconQueue(props: IconProps) {
   return (
     <Svg {...props}>

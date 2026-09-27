@@ -1,7 +1,8 @@
 import type { Member, PostView, Transfer } from "../../shared/types";
 import { artUrl, KIND_LABEL, metaLine, timeAgo, UNKNOWN_MEMBER } from "../format";
 import { Art, Avatar, AvatarStack } from "./Bits";
-import { IconChat, IconCheck, IconKind } from "./Icons";
+import { IconChat, IconCheck, IconKind, IconPlay } from "./Icons";
+import { viewFor } from "../playable";
 
 export function Tile({
   post,
@@ -23,6 +24,7 @@ export function Tile({
   const downloading = transfer && (transfer.state === "downloading" || transfer.state === "queued");
   const pct = transfer && transfer.total ? Math.round((transfer.bytes / transfer.total) * 100) : 0;
   const sub = metaLine(post.meta);
+  const ready = post.localPath ? viewFor(post) : null;
 
   return (
     <button className={`tile${selected ? " selected" : ""}`} onClick={onOpen} aria-label={post.meta.title}>
@@ -36,6 +38,11 @@ export function Tile({
           <span className="badge have" title="You have a copy">
             <IconCheck size={11} />
             Yours
+          </span>
+        ) : null}
+        {ready ? (
+          <span className="play-hint" aria-hidden>
+            <span>{ready.mode === "video" || ready.mode === "audio" ? <IconPlay size={20} /> : <IconKind kind={ready.mode === "images" ? "photos" : "book"} size={20} />}</span>
           </span>
         ) : null}
         {downloading ? (

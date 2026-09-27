@@ -3,7 +3,8 @@ import type { Comment, Member, PostView, Transfer } from "../../shared/types";
 import { api } from "../api";
 import { artUrl, clockTime, formatBytes, KIND_LABEL, metaLine, timeAgo, UNKNOWN_MEMBER } from "../format";
 import { Art, Avatar } from "./Bits";
-import { IconChat, IconClose, IconDownload, IconExternal, IconFolder, IconKind, IconTrash, IconUsers } from "./Icons";
+import { IconChat, IconClose, IconDownload, IconExternal, IconFolder, IconKind, IconPlay, IconTrash, IconUsers } from "./Icons";
+import { ACTION_LABEL, viewFor } from "../playable";
 
 const REACTIONS = ["🔥", "❤️", "😂", "👀", "🙌"];
 
@@ -21,13 +22,18 @@ export function DetailSheet({
   transfer,
   onClose,
   onError,
+  onPlay,
+  compact,
 }: {
   post: PostView;
   members: Map<string, Member>;
   transfer?: Transfer;
   onClose: () => void;
   onError: (msg: string) => void;
+  onPlay?: () => void;
+  compact?: boolean;
 }) {
+  const playable = viewFor(post);
   const [comments, setComments] = useState<Comment[]>([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -83,7 +89,7 @@ export function DetailSheet({
   facts.push(["Files", `${post.files.length} · ${formatBytes(post.totalSize)}`]);
 
   return (
-    <aside className="sheet" aria-label={post.meta.title}>
+    <aside className={`sheet${compact ? " compact" : ""}`} aria-label={post.meta.title}>
       <div className="sheet-head">
         <IconKind kind={post.meta.kind} size={14} />
         <strong style={{ fontSize: 13 }}>{KIND_LABEL[post.meta.kind]}</strong>
@@ -118,7 +124,13 @@ export function DetailSheet({
             <div className="actions" style={{ marginTop: 14 }}>
               {have ? (
                 <>
-                  <button className="btn primary" onClick={() => run(api.reveal(post.id))}>
+                  {playable && onPlay ? (
+                    <button className="btn primary" onClick={onPlay}>
+                      <IconPlay size={13} />
+                      {ACTION_LABEL[playable.mode]}
+                    </button>
+                  ) : null}
+                  <button className={`btn${playable && onPlay ? "" : " primary"}`} onClick={() => run(api.reveal(post.id))}>
                     <IconFolder size={14} />
                     Show in Finder
                   </button>
@@ -170,13 +182,13 @@ export function DetailSheet({
         ) : null}
 
         {post.meta.description ? (
-          <div className="section">
+          <div className="section extra">
             <h3>About</h3>
             <p>{post.meta.description}</p>
           </div>
         ) : null}
 
-        <div className="section">
+        <div className="section extra">
           <h3>Details</h3>
           <dl className="facts">
             {facts.map(([k, v]) => (
@@ -185,7 +197,7 @@ export function DetailSheet({
           </dl>
         </div>
 
-        <div className="section">
+        <div className="section extra">
           <h3>
             <IconUsers size={13} />
             Who has a copy · {post.holders.length}
@@ -204,7 +216,7 @@ export function DetailSheet({
           </div>
         </div>
 
-        <div className="section">
+        <div className="section extra">
           <h3>Files</h3>
           <div className="file-list">
             {post.files.map((f) =>
