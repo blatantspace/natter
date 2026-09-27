@@ -24,6 +24,7 @@ const api: QueueueApi = {
   setIdentity: (name) => call("setIdentity", name),
   createGroup: (name) => call("createGroup", name),
   joinGroup: (invite) => call("joinGroup", invite),
+  inviteFromClipboard: () => call("inviteFromClipboard"),
   switchGroup: (id) => call("switchGroup", id),
   leaveGroup: (id) => call("leaveGroup", id),
 

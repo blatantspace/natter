@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, powerMonitor, protocol, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, powerMonitor, powerSaveBlocker, protocol, shell } from "electron";
 import { dataDir, loadIdentity, loadSettings, saveIdentity, saveSettings, type KeyPair } from "./config";
 import * as groups from "./groups";
 import { Engine } from "./engine";
@@ -49,11 +49,26 @@ function state(): AppState {
   };
 }
 
+let awakeId: number | null = null;
+function keepAwakeWhileDownloading() {
+  const busy = [...(engine?.transfers.values() ?? [])].some((t) => t.state === "downloading");
+  if (busy && awakeId === null) awakeId = powerSaveBlocker.start("prevent-app-suspension");
+  if (!busy && awakeId !== null) {
+    powerSaveBlocker.stop(awakeId);
+    awakeId = null;
+  }
+}
+
+function applyLoginItem() {
+  if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: settings.openAtLogin });
+}
+
 let pushTimer: NodeJS.Timeout | null = null;
 function push() {
   if (pushTimer) return;
   pushTimer = setTimeout(() => {
     pushTimer = null;
+    keepAwakeWhileDownloading();
     win?.webContents.send("state", state());
   }, 60);
 }
@@ -331,6 +346,7 @@ function registerIpc() {
   handle("updateSettings", (patch: Partial<Settings>) => {
     settings = { ...settings, ...patch };
     saveSettings(settings);
+    applyLoginItem();
     engine?.changed();
     push();
     return settings;
@@ -342,6 +358,15 @@ function registerIpc() {
   });
 
   handle("copy", (text: string) => clipboard.writeText(text));
+  handle("inviteFromClipboard", async () => {
+    const text = await clipboard.readText();
+    try {
+      groups.parseInvite(text);
+      return text.trim();
+    } catch {
+      return null;
+    }
+  });
 }
 
 app.whenReady().then(async () => {
@@ -356,6 +381,17 @@ app.whenReady().then(async () => {
   const link = process.argv.find((a) => a.startsWith("queueue://"));
   if (link) pendingLink = link;
   powerMonitor.on("resume", () => engine?.refreshNow());
+  if (app.isPackaged && !profile && !app.isInApplicationsFolder()) {
+    const { response } = await dialog.showMessageBox({
+      type: "question",
+      buttons: ["Move to Applications", "Not now"],
+      defaultId: 0,
+      message: "Move queueue to your Applications folder?",
+      detail: "That way it keeps running after you eject the download and starts up with your Mac.",
+    });
+    if (response === 0 && app.moveToApplicationsFolder()) return;
+  }
+  applyLoginItem();
   await startEngine();
 });
 

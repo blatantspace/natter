@@ -1725,6 +1725,12 @@ button.file-row:hover {
   animation: spin 700ms linear infinite;
 }
 
+.drop-box .spinner {
+  width: 26px;
+  height: 26px;
+  border-width: 3px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

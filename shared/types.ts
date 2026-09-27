@@ -24,6 +24,7 @@ export interface GroupInfo {
   name: string;
   invite: string;
   createdAt: number;
+  joined: boolean;
 }
 
 export interface Member {
@@ -118,6 +119,7 @@ export interface Settings {
   autoDownloadMaxMB: number;
   downloadDir: string;
   tmdbKey: string;
+  openAtLogin: boolean;
 }
 
 export interface AppState {
@@ -167,6 +169,7 @@ export interface QueueueApi {
   setIdentity(name: string): Promise<Identity>;
   createGroup(name: string): Promise<GroupInfo>;
   joinGroup(invite: string): Promise<GroupInfo>;
+  inviteFromClipboard(): Promise<string | null>;
   switchGroup(id: string): Promise<void>;
   leaveGroup(id: string): Promise<void>;
 

@@ -51,6 +51,7 @@ function Home({ state }: { state: AppState }) {
 
   const members = useMemo(() => memberMap(state.members), [state.members]);
   const friendsOnline = state.members.filter((m) => !m.you && m.online).length;
+  const createdHere = !state.group!.joined;
 
   const flash = useCallback((text: string, error = false) => {
     setToast({ text, error });
@@ -284,7 +285,18 @@ function Home({ state }: { state: AppState }) {
             />
           ) : null}
           <div className="mosaic-scroll" hidden={!!viewing}>
-            {state.posts.length === 0 ? (
+            {state.posts.length === 0 && state.members.every((m) => m.you) && !createdHere ? (
+              <div className="empty">
+                <div className="drop-box">
+                  <span className="spinner" />
+                  <h2>Finding {group.name}…</h2>
+                  <p>
+                    Your friends' stuff shows up here as soon as one of them has queueue open. Leave this running, it can take a
+                    minute the first time.
+                  </p>
+                </div>
+              </div>
+            ) : state.posts.length === 0 ? (
               <div className="empty">
                 <div className="drop-box">
                   <IconShare size={28} />

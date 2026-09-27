@@ -9,6 +9,7 @@ export interface StoredGroup {
   name: string;
   secret: string;
   createdAt: number;
+  joined?: boolean;
 }
 
 interface GroupsFile {
@@ -36,7 +37,7 @@ export function inviteLink(g: StoredGroup): string {
 }
 
 export function toInfo(g: StoredGroup): GroupInfo {
-  return { id: g.id, name: g.name, invite: inviteLink(g), createdAt: g.createdAt };
+  return { id: g.id, name: g.name, invite: inviteLink(g), createdAt: g.createdAt, joined: !!g.joined };
 }
 
 function idFor(secretHex: string): string {
@@ -71,11 +72,13 @@ export function parseInvite(invite: string): { secret: string; name: string } {
   const m = text.match(/([0-9a-f]{64})/i);
   if (!m) throw new Error("That doesn't look like a queueue invite link.");
   let name = "Friends";
-  try {
-    const url = new URL(text.replace(/^queueue:\/\//, "https://queueue.invalid/"));
-    name = url.searchParams.get("name") || name;
-  } catch {
-    // raw key pasted
+  const link = text.match(/queueue:\/\/join\/[0-9a-f]{64}\S*/i)?.[0];
+  if (link) {
+    try {
+      name = new URL(link.replace(/^queueue:\/\//i, "https://queueue.invalid/")).searchParams.get("name") || name;
+    } catch {
+      // keep the default name
+    }
   }
   return { secret: m[1].toLowerCase(), name };
 }
@@ -86,7 +89,7 @@ export function joinGroup(invite: string): StoredGroup {
   const id = idFor(secret);
   let g = f.groups.find((x) => x.id === id);
   if (!g) {
-    g = { id, name, secret, createdAt: Date.now() };
+    g = { id, name, secret, createdAt: Date.now(), joined: true };
     f.groups.push(g);
   }
   f.active = id;

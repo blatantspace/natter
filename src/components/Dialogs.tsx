@@ -101,6 +101,10 @@ export function SettingsModal({ state, onClose }: { state: AppState; onClose: ()
             GB
           </span>
         </div>
+        <label className="toggle">
+          <input type="checkbox" checked={s.openAtLogin} onChange={(e) => setS({ ...s, openAtLogin: e.target.checked })} />
+          Start queueue when I log in
+        </label>
         <p className="faint" style={{ fontSize: 12, margin: 0 }}>
           Closing the window keeps queueue running. Every copy you hold also helps friends download faster.
         </p>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AppState } from "../../shared/types";
 import { api } from "../api";
 import { IconQueue } from "./Icons";
@@ -12,6 +12,17 @@ export function Onboarding({ state, joinLink, onDone }: { state: AppState; joinL
   const [error, setError] = useState<string | null>(null);
 
   const needsName = !state.identity;
+  const [fromClipboard, setFromClipboard] = useState(false);
+
+  useEffect(() => {
+    if (needsName || joinLink) return;
+    void api.inviteFromClipboard().then((link) => {
+      if (!link) return;
+      setInvite(link);
+      setMode("join");
+      setFromClipboard(true);
+    });
+  }, [needsName, joinLink]);
 
   async function go() {
     setBusy(true);
@@ -64,7 +75,7 @@ export function Onboarding({ state, joinLink, onDone }: { state: AppState; joinL
               </p>
               <label className="field">
                 <span>What should friends call you?</span>
-                <input className="input" autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+                <input className="input" autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Your first name" />
               </label>
             </>
           ) : (
@@ -88,7 +99,17 @@ export function Onboarding({ state, joinLink, onDone }: { state: AppState; joinL
               ) : (
                 <label className="field">
                   <span>Invite link</span>
-                  <input className="input mono" autoFocus value={invite} onChange={(e) => setInvite(e.target.value)} placeholder="queueue://join/…" />
+                  <input
+                    className="input mono"
+                    autoFocus
+                    value={invite}
+                    onChange={(e) => {
+                      setInvite(e.target.value);
+                      setFromClipboard(false);
+                    }}
+                    placeholder="Paste the whole message, queueue finds the link"
+                  />
+                  {fromClipboard ? <div className="faint" style={{ fontSize: 12 }}>Found an invite you copied. Just hit Join.</div> : null}
                 </label>
               )}
             </>

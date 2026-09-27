@@ -79,6 +79,7 @@ export function loadSettings(): Settings {
     autoDownloadMaxMB: 2048,
     downloadDir: path.join(os.homedir(), "Downloads", "queueue"),
     tmdbKey: "",
+    openAtLogin: true,
   };
   return { ...defaults, ...readJson<Partial<Settings>>(settingsFile(), {}) };
 }

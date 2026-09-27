@@ -52,6 +52,7 @@ const log = (...args: unknown[]) => {
 };
 const hex = (b: Buffer) => b4a.toString(b, "hex");
 const randomId = () => hex(crypto.randomBytes(8));
+const gb = (n: number) => `${(n / 1024 ** 3).toFixed(1)} GB`;
 const safeName = (s: string) => s.replace(/[/\\:*?"<>|\u0000-\u001f]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) || "queueue";
 
 export class Engine extends EventEmitter {
@@ -542,8 +543,16 @@ export class Engine extends EventEmitter {
     const t: Transfer = { postId, bytes: 0, total: post.totalSize, state: "downloading" };
     this.transfers.set(postId, t);
     this.changed();
-    const destRoot = this.uniqueDir(this.settings().downloadDir, safeName(post.meta.title));
+    const base = this.settings().downloadDir;
+    const destRoot = this.uniqueDir(base, safeName(post.meta.title));
     try {
+      fs.mkdirSync(base, { recursive: true });
+      const { bavail, bsize } = fs.statfsSync(base);
+      const free = bavail * bsize;
+      const needed = post.totalSize * 2 + 512 * 1024 * 1024;
+      if (free < needed) {
+        throw new Error(`Not enough space. This needs about ${gb(needed)} free and your Mac has ${gb(free)}.`);
+      }
       await author.drive.getBlobs();
       for (const f of post.files) {
         const target = path.resolve(destRoot, f.path);

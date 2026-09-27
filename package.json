@@ -42,7 +42,8 @@
         "dmg",
         "zip"
       ],
-      "identity": null
+      "identity": "-",
+      "hardenedRuntime": false
     }
   },
   "dependencies": {
