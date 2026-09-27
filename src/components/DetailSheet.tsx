@@ -174,7 +174,7 @@ export function DetailSheet({
             <div className="note-card">
               <Avatar member={author} size={24} />
               <div>
-                <strong style={{ fontSize: 13 }}>{author.you ? "You" : author.name} says</strong>
+                <strong style={{ fontSize: 13 }}>{author.you ? "You said" : `${author.name} says`}</strong>
                 <div>{post.note}</div>
               </div>
             </div>
