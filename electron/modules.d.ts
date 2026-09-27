@@ -1,0 +1,7 @@
+declare module "corestore";
+declare module "hyperdrive";
+declare module "hyperswarm";
+declare module "hypercore";
+declare module "hypercore-crypto";
+declare module "b4a";
+declare module "compact-encoding";

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="128" fill="#3f0e40"/>
-  <rect x="64" y="64" width="384" height="384" rx="96" fill="#611f69"/>
-  <text x="256" y="340" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="280" font-weight="900" fill="#ffffff" text-anchor="middle">N</text>
-  <circle cx="400" cy="112" r="32" fill="#2bac76"/>
+  <rect width="512" height="512" rx="112" fill="#4a9a94"/>
+  <rect x="96" y="120" width="320" height="80" rx="22" fill="#faf8f3" stroke="#1c1a16" stroke-width="12"/>
+  <rect x="96" y="216" width="320" height="80" rx="22" fill="#f0e2a8" stroke="#1c1a16" stroke-width="12"/>
+  <rect x="96" y="312" width="320" height="80" rx="22" fill="#c5e4e0" stroke="#1c1a16" stroke-width="12"/>
 </svg>
