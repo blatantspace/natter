@@ -13,6 +13,7 @@ import c from "compact-encoding";
 import { readJson, writeJson, type KeyPair } from "./config";
 import { groupKeys, type GroupKeys, type StoredGroup } from "./groups";
 import type { LocalFile } from "./ingest";
+import { CHUNK, HASH_BYTES, chunkCount, chunkDataEncoding, hashChunk, hashFiles, readChunk, type ChunkData, type ChunkRequest } from "./files";
 import type { Comment, Identity, Member, Post, PostMeta, PostView, ReactionView, Settings, Transfer } from "../shared/types";
 
 interface Profile {
@@ -34,17 +35,32 @@ interface MemberState {
   rescan: boolean;
 }
 
+interface Pending {
+  resolve: (data: Buffer) => void;
+  reject: (err: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
 interface Peer {
   conn: any;
   msg: any;
   memberKey: string | null;
+  files: { request: any; data: any; fail: any } | null;
+  pending: Map<number, Pending>;
 }
 
 interface LocalState {
   members: string[];
   reads: Record<string, number>;
   paths: Record<string, string>;
+  files: Record<string, string[]>;
+  partial: Record<string, string>;
 }
+
+class Paused extends Error {}
+
+const WINDOW = 4;
+const CHUNK_TIMEOUT = 30000;
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const log = (...args: unknown[]) => {
@@ -82,7 +98,7 @@ export class Engine extends EventEmitter {
     super();
     this.keys = groupKeys(group);
     this.localFile = path.join(dir, "local.json");
-    this.local = { members: [], reads: {}, paths: {}, ...readJson<Partial<LocalState>>(this.localFile, {}) };
+    this.local = { members: [], reads: {}, paths: {}, files: {}, partial: {}, ...readJson<Partial<LocalState>>(this.localFile, {}) };
   }
 
   private saveLocal() {
@@ -201,7 +217,7 @@ export class Engine extends EventEmitter {
     conn.on("error", (err: Error) => log("conn error", err.message));
     const stream = this.store.replicate(conn);
     const mux = Hypercore.getProtocolMuxer(stream);
-    const peer: Peer = { conn, msg: null, memberKey: null };
+    const peer: Peer = { conn, msg: null, memberKey: null, files: null, pending: new Map() };
     const channel = mux.createChannel({
       protocol: "queueue/hello/v1",
       id: this.keys.topic,
@@ -211,7 +227,51 @@ export class Engine extends EventEmitter {
     if (!channel) return;
     peer.msg = channel.addMessage({ encoding: c.json, onmessage: (m: any) => this.onHello(peer, m) });
     channel.open();
+
+    const files = mux.createChannel({ protocol: "queueue/files/v1", id: this.keys.topic });
+    if (files) {
+      peer.files = {
+        request: files.addMessage({ encoding: c.json, onmessage: (m: ChunkRequest) => void this.serveChunk(peer, m) }),
+        data: files.addMessage({ encoding: chunkDataEncoding, onmessage: (m: ChunkData) => this.settle(peer, m.rid, m.data) }),
+        fail: files.addMessage({ encoding: c.json, onmessage: (m: { rid: number; error: string }) => this.settle(peer, m.rid, null, m.error) }),
+      };
+      files.open();
+    }
     conn.on("close", () => this.dropPeer(peer));
+  }
+
+  private async serveChunk(peer: Peer, m: ChunkRequest) {
+    const reply = peer.files!;
+    try {
+      if (!this.peers.has(peer)) throw new Error("Say hello first");
+      const post = this.findPost(m.post);
+      const abs = this.local.files[m.post]?.[m.file];
+      const f = post?.files[m.file];
+      if (!post || !abs || !f || !Number.isInteger(m.index)) throw new Error("I don't have that");
+      reply.data.send({ rid: m.rid, data: await readChunk(abs, f.size, m.index) });
+    } catch (err) {
+      reply.fail.send({ rid: m.rid, error: (err as Error).message });
+    }
+  }
+
+  private settle(peer: Peer, rid: number, data: Buffer | null, error?: string) {
+    const p = peer.pending.get(rid);
+    if (!p) return;
+    peer.pending.delete(rid);
+    clearTimeout(p.timer);
+    if (data) p.resolve(data);
+    else p.reject(new Error(error || "Chunk failed"));
+  }
+
+  private rid = 0;
+  private requestChunk(peer: Peer, post: string, file: number, index: number): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      if (!peer.files || !this.peers.has(peer)) return reject(new Error("Peer gone"));
+      const rid = ++this.rid;
+      const timer = setTimeout(() => this.settle(peer, rid, null, "Timed out"), CHUNK_TIMEOUT);
+      peer.pending.set(rid, { resolve, reject, timer });
+      peer.files.request.send({ rid, post, file, index });
+    });
   }
 
   private sendHello(peer: Peer) {
@@ -254,6 +314,7 @@ export class Engine extends EventEmitter {
   }
 
   private dropPeer(peer: Peer) {
+    for (const rid of [...peer.pending.keys()]) this.settle(peer, rid, null, "Peer gone");
     if (!this.peers.delete(peer)) return;
     const member = peer.memberKey ? this.members.get(peer.memberKey) : null;
     if (member) member.online = [...this.peers].filter((p) => p.memberKey === member.key).length;
@@ -418,20 +479,16 @@ export class Engine extends EventEmitter {
     const total = opts.files.reduce((n, f) => n + f.size, 0);
     let bytes = 0;
     let lastTick = 0;
-    for (const f of opts.files) {
-      const tap = new Transform({
-        transform(chunk, _enc, cb) {
-          bytes += chunk.length;
-          const now = Date.now();
-          if (now - lastTick > 150) {
-            lastTick = now;
-            opts.onProgress(bytes, total);
-          }
-          cb(null, chunk);
-        },
-      });
-      await pipeline(fs.createReadStream(f.abs), tap, this.me.drive.createWriteStream(`${root}/${f.path}`));
-    }
+    const hashes = await hashFiles(opts.files, (n) => {
+      bytes += n;
+      const now = Date.now();
+      if (now - lastTick > 150) {
+        lastTick = now;
+        opts.onProgress(bytes, total);
+      }
+    });
+    const hashesPath = `/hashes/${id}`;
+    await this.me.drive.put(hashesPath, hashes);
     const meta: PostMeta = { ...opts.meta };
     if (opts.artwork) {
       const artPath = `/art/${id}.${opts.artwork.ext}`;
@@ -448,7 +505,9 @@ export class Engine extends EventEmitter {
       files: opts.files.map(({ path: p, size, kind, mime, tags }) => ({ path: p, size, kind, mime, ...(tags && Object.keys(tags).length ? { tags } : {}) })),
       totalSize: total,
       root,
+      hashes: hashesPath,
     };
+    this.local.files[id] = opts.files.map((f) => f.abs);
     await this.me.drive.putEntry(`/posts/${id}`, { metadata: post });
     await this.me.drive.putEntry(`/holds/${id}`, { metadata: { at: Date.now(), complete: true } });
     if (opts.localPath) this.local.paths[id] = opts.localPath;
@@ -463,6 +522,9 @@ export class Engine extends EventEmitter {
     if (!post) throw new Error("You can only remove things you shared.");
     for await (const e of this.me.drive.list(post.root)) await this.me.drive.del(e.key);
     if (post.meta.artwork) await this.me.drive.del(post.meta.artwork);
+    if (post.hashes) await this.me.drive.del(post.hashes);
+    delete this.local.files[postId];
+    this.saveLocal();
     await this.me.drive.del(`/posts/${postId}`);
     await this.me.drive.del(`/holds/${postId}`);
   }
@@ -501,6 +563,7 @@ export class Engine extends EventEmitter {
   }
 
   private sourceOnline(post: Post): boolean {
+    if (post.hashes) return this.sourcesFor(post).length > 0;
     for (const m of this.members.values()) {
       if (m === this.me || m.online === 0) continue;
       if (m.key === post.author || m.holds.get(post.id)?.complete) return true;
@@ -536,6 +599,12 @@ export class Engine extends EventEmitter {
     return dir;
   }
 
+  private sourcesFor(post: Post): Peer[] {
+    return [...this.peers].filter(
+      (p) => p.files && p.memberKey && p.memberKey !== this.me.key && (p.memberKey === post.author || this.members.get(p.memberKey)?.holds.get(post.id)?.complete),
+    );
+  }
+
   private async downloadNow(postId: string) {
     const post = this.findPost(postId);
     const author = post && this.members.get(post.author);
@@ -544,40 +613,133 @@ export class Engine extends EventEmitter {
     this.transfers.set(postId, t);
     this.changed();
     const base = this.settings().downloadDir;
-    const destRoot = this.uniqueDir(base, safeName(post.meta.title));
+    const resuming = this.local.partial[postId];
+    const destRoot = resuming && fs.existsSync(resuming) ? resuming : this.uniqueDir(base, safeName(post.meta.title));
     try {
       fs.mkdirSync(base, { recursive: true });
       const { bavail, bsize } = fs.statfsSync(base);
       const free = bavail * bsize;
-      const needed = post.totalSize * 2 + 512 * 1024 * 1024;
+      const needed = (post.hashes ? post.totalSize : post.totalSize * 2) + 512 * 1024 * 1024;
       if (free < needed) {
         throw new Error(`Not enough space. This needs about ${gb(needed)} free and your Mac has ${gb(free)}.`);
       }
-      await author.drive.getBlobs();
-      for (const f of post.files) {
+      this.local.partial[postId] = destRoot;
+      this.saveLocal();
+      const targets = post.files.map((f) => {
         const target = path.resolve(destRoot, f.path);
         if (!target.startsWith(destRoot + path.sep)) throw new Error(`Refusing unsafe path ${f.path}`);
         fs.mkdirSync(path.dirname(target), { recursive: true });
-        const tap = new Transform({
-          transform: (chunk, _enc, cb) => {
-            t.bytes += chunk.length;
-            this.changed();
-            cb(null, chunk);
-          },
-        });
-        await pipeline(author.drive.createReadStream(`${post.root}/${f.path}`), tap, fs.createWriteStream(target));
-      }
+        return target;
+      });
+      if (post.hashes) await this.fetchChunks(post, author, targets, t);
+      else await this.fetchLegacy(post, author, targets, t);
       await this.me.drive.putEntry(`/holds/${postId}`, { metadata: { at: Date.now(), complete: true } });
       this.local.paths[postId] = destRoot;
+      this.local.files[postId] = targets;
+      delete this.local.partial[postId];
       this.saveLocal();
       t.state = "done";
       t.path = destRoot;
       t.bytes = t.total;
+      t.error = undefined;
     } catch (err) {
-      t.state = "error";
-      t.error = (err as Error).message;
+      if (err instanceof Paused) {
+        t.state = "queued";
+        t.error = err.message;
+        if (!this.queue.includes(postId)) this.queue.push(postId);
+      } else {
+        t.state = "error";
+        t.error = (err as Error).message;
+      }
     }
     this.changed();
+  }
+
+  private async fetchLegacy(post: Post, author: MemberState, targets: string[], t: Transfer) {
+    await author.drive.getBlobs();
+    for (let i = 0; i < post.files.length; i++) {
+      const tap = new Transform({
+        transform: (chunk, _enc, cb) => {
+          t.bytes += chunk.length;
+          this.changed();
+          cb(null, chunk);
+        },
+      });
+      await pipeline(author.drive.createReadStream(`${post.root}/${post.files[i].path}`), tap, fs.createWriteStream(targets[i]));
+    }
+  }
+
+  private async fetchChunks(post: Post, author: MemberState, targets: string[], t: Transfer) {
+    const hashes: Buffer | null = await author.drive.get(post.hashes!, { wait: true, timeout: 30000 }).catch(() => null);
+    const expected = post.files.reduce((n, f) => n + chunkCount(f.size), 0) * HASH_BYTES;
+    if (!hashes || hashes.length !== expected) throw new Paused("Getting ready. Waiting for the file fingerprints.");
+    const hashAt = (g: number) => hashes.subarray(g * HASH_BYTES, (g + 1) * HASH_BYTES);
+
+    const jobs: { file: number; index: number; global: number }[] = [];
+    const handles: fs.promises.FileHandle[] = [];
+    try {
+      let g = 0;
+      for (let i = 0; i < post.files.length; i++) {
+        const f = post.files[i];
+        const part = `${targets[i]}.part`;
+        if (fs.existsSync(targets[i]) && !fs.existsSync(part)) fs.renameSync(targets[i], part);
+        const existed = fs.existsSync(part);
+        const fh = await fs.promises.open(part, existed ? "r+" : "w+");
+        handles.push(fh);
+        if ((await fh.stat()).size !== f.size) await fh.truncate(f.size);
+        for (let j = 0; j < chunkCount(f.size); j++, g++) {
+          if (existed) {
+            const len = Math.min(CHUNK, f.size - j * CHUNK);
+            const buf = Buffer.alloc(len);
+            await fh.read(buf, 0, len, j * CHUNK);
+            if (b4a.equals(hashChunk(buf), hashAt(g))) {
+              t.bytes += len;
+              continue;
+            }
+          }
+          jobs.push({ file: i, index: j, global: g });
+        }
+      }
+      this.changed();
+
+      const bad = new Set<Peer>();
+      const strikes = new Map<Peer, number>();
+      const worker = async (peer: Peer) => {
+        while (jobs.length && !this.closed && !bad.has(peer)) {
+          const job = jobs.shift()!;
+          const f = post.files[job.file];
+          const len = Math.min(CHUNK, f.size - job.index * CHUNK);
+          try {
+            const data = await this.requestChunk(peer, post.id, job.file, job.index);
+            if (data.length !== len || !b4a.equals(hashChunk(data), hashAt(job.global))) {
+              log("bad chunk from", peer.memberKey?.slice(0, 8));
+              jobs.push(job);
+              bad.add(peer);
+              continue;
+            }
+            await handles[job.file].write(data, 0, len, job.index * CHUNK);
+            t.bytes += len;
+            this.changed();
+          } catch {
+            jobs.unshift(job);
+            const s = (strikes.get(peer) ?? 0) + 1;
+            strikes.set(peer, s);
+            if (s >= 3 || !this.peers.has(peer)) bad.add(peer);
+          }
+        }
+      };
+      while (jobs.length && !this.closed) {
+        const all = this.sourcesFor(post);
+        if (!all.length) throw new Paused("Paused. It picks up where it left off when someone with a copy is back.");
+        const usable = all.filter((p) => !bad.has(p));
+        if (!usable.length) throw new Error("Nobody online has a clean copy of this right now.");
+        await Promise.all(usable.flatMap((p) => Array.from({ length: WINDOW }, () => worker(p))));
+      }
+      if (jobs.length) throw new Paused("Paused.");
+    } finally {
+      for (const fh of handles) await fh.close().catch(() => {});
+    }
+    for (const target of targets) fs.renameSync(`${target}.part`, target);
   }
 
   private autoDownload() {

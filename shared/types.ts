@@ -81,6 +81,7 @@ export interface Post {
   files: FileEntry[];
   totalSize: number;
   root: string;
+  hashes?: string;
 }
 
 export interface Comment {

@@ -130,11 +130,11 @@ export function ShareSheet({
           <>
             {phase === "publishing" ? (
               <span className="muted grow" style={{ fontSize: 13 }}>
-                Copying into your drive… {pct}% · {formatBytes(progress?.bytes ?? 0)} of {formatBytes(draft?.totalSize ?? 0)}
+                Getting it ready… {pct}% · {formatBytes(progress?.bytes ?? 0)} of {formatBytes(draft?.totalSize ?? 0)}
               </span>
             ) : (
               <span className="faint grow" style={{ fontSize: 12 }}>
-                Friends get a real copy, straight from your Mac. Encrypted for this queueue only.
+                Nothing gets copied. Friends pull straight from these files, so leave them where they are.
               </span>
             )}
             <button className="btn" onClick={onClose} disabled={phase === "publishing"}>
