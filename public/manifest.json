@@ -1,0 +1,17 @@
+{
+  "name": "Natter Lounge",
+  "short_name": "Natter",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1d21",
+  "theme_color": "#3f0e40",
+  "description": "Private, End-to-End Encrypted Canadian Chat Lounge",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

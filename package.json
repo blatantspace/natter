@@ -1,0 +1,35 @@
+{
+  "name": "natter",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Slack-like private encrypted chat for you and your buds",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n server,web -c magenta,cyan \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "NODE_ENV=production node server/index.js",
+    "preview": "vite preview",
+    "postinstall": "mkdir -p public/vendor && cp node_modules/webtorrent/dist/webtorrent.min.js public/vendor/webtorrent.min.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "bittorrent-tracker": "^11.2.3",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "nanoid": "^5.1.0",
+    "webtorrent": "^3.0.21",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.1.0"
+  }
+}
