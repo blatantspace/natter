@@ -171,7 +171,7 @@ function createWindow() {
     title: profile ? `queueue (${profile})` : "queueue",
     backgroundColor: "#4a9a94",
     titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 18, y: 18 },
+    trafficLightPosition: { x: 14, y: 12 },
     webPreferences: {
       preload: path.join(import.meta.dirname, "../preload/preload.cjs"),
       contextIsolation: true,

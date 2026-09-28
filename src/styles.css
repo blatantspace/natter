@@ -148,13 +148,22 @@ textarea {
 
 .app-frame {
   height: 100%;
-  padding: 40px 12px 12px;
   display: flex;
 }
 
 .app-frame > .mac-window {
   flex: 1;
   min-width: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* traffic lights sit in the left padding (trafficLightPosition in main.ts) */
+.app-frame > .mac-window > .mac-titlebar {
+  height: 38px;
+  min-height: 38px;
+  padding-left: 80px;
 }
 
 .drag-strip {

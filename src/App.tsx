@@ -180,7 +180,6 @@ function Home({ state }: { state: AppState }) {
 
   return (
     <div className="app-frame">
-      <div className="drag-strip">queueue</div>
       <div className="mac-window">
         <div className="mac-titlebar">
           <span />
