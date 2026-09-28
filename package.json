@@ -55,7 +55,9 @@
     "hypercore-crypto": "^3.7.0",
     "hyperdrive": "^13.3.4",
     "hyperswarm": "^4.17.2",
-    "music-metadata": "^11.16.1"
+    "music-metadata": "^11.16.1",
+    "protomux": "^3.12.1",
+    "sodium-universal": "^5.0.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -22,17 +22,42 @@ export interface Identity {
 export interface GroupInfo {
   id: string;
   name: string;
-  invite: string;
   createdAt: number;
   joined: boolean;
+  owner: string;
+  isOwner: boolean;
 }
 
 export interface Member {
   key: string;
+  keys: string[];
+  identity: string;
   name: string;
   color: string;
   online: boolean;
   you: boolean;
+  owner: boolean;
+}
+
+export interface InviteView {
+  id: string;
+  link: string;
+  createdAt: number;
+  expires: number;
+}
+
+export interface JoinRequest {
+  id: string;
+  name: string;
+  code: string;
+  at: number;
+}
+
+export interface PendingJoinView {
+  name: string;
+  from: string;
+  status: "finding" | "waiting" | "denied" | "expired" | "used";
+  code?: string;
 }
 
 export interface FileEntry {
@@ -133,6 +158,10 @@ export interface AppState {
   settings: Settings;
   peers: number;
   ready: boolean;
+  invites: InviteView[];
+  joinRequests: JoinRequest[];
+  pendingJoin: PendingJoinView | null;
+  notice: string | null;
 }
 
 export interface ShareDraft {
@@ -169,8 +198,14 @@ export interface QueueueApi {
 
   setIdentity(name: string): Promise<Identity>;
   createGroup(name: string): Promise<GroupInfo>;
-  joinGroup(invite: string): Promise<GroupInfo>;
+  joinGroup(invite: string): Promise<void>;
+  cancelJoin(): Promise<void>;
   inviteFromClipboard(): Promise<string | null>;
+  createInvite(): Promise<InviteView>;
+  cancelInvite(id: string): Promise<void>;
+  answerJoin(requestId: string, approve: boolean): Promise<void>;
+  removeMember(identity: string): Promise<void>;
+  dismissNotice(): Promise<void>;
   switchGroup(id: string): Promise<void>;
   leaveGroup(id: string): Promise<void>;
 

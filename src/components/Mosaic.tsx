@@ -18,7 +18,7 @@ export function Tile({
   onOpen: () => void;
 }) {
   const author = members.get(post.author) ?? UNKNOWN_MEMBER;
-  const holders = post.holders.filter((k) => k !== post.author).map((k) => members.get(k) ?? UNKNOWN_MEMBER);
+  const holders = post.holders.map((k) => members.get(k) ?? UNKNOWN_MEMBER).filter((m) => m !== author);
   const me = [...members.values()].find((m) => m.you);
   const have = !!post.localPath || (me && post.holders.includes(me.key));
   const downloading = transfer && (transfer.state === "downloading" || transfer.state === "queued");

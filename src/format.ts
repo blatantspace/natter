@@ -85,9 +85,9 @@ export function metaLine(meta: PostMeta): string {
 }
 
 export function memberMap(members: Member[]): Map<string, Member> {
-  return new Map(members.map((m) => [m.key, m]));
+  return new Map(members.flatMap((m) => m.keys.map((k) => [k, m] as const)));
 }
 
-export const UNKNOWN_MEMBER: Member = { key: "", name: "Someone", color: "#7a7468", online: false, you: false };
+export const UNKNOWN_MEMBER: Member = { key: "", keys: [], identity: "", name: "Someone", color: "#7a7468", online: false, you: false, owner: false };
 
 export const artUrl = (author: string, artwork?: string) => (artwork ? `qq://${author}${artwork}` : undefined);

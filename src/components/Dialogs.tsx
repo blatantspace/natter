@@ -4,42 +4,139 @@ import { api } from "../api";
 import { Avatar, Modal } from "./Bits";
 import { IconCopy, IconFolder } from "./Icons";
 
-export function InviteModal({ state, onClose }: { state: AppState; onClose: () => void }) {
+const daysLeft = (expires: number) => {
+  const hours = Math.max(0, Math.round((expires - Date.now()) / 3_600_000));
+  return hours >= 48 ? `${Math.round(hours / 24)} days left` : hours >= 1 ? `${hours}h left` : "expires soon";
+};
+
+export function InviteModal({ state, onClose, onError }: { state: AppState; onClose: () => void; onError: (msg: string) => void }) {
+  const [fresh, setFresh] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const invite = state.group?.invite ?? "";
+  const [busy, setBusy] = useState(false);
+  const isOwner = !!state.group?.isOwner;
+
+  const copy = (link: string) => {
+    void api.copy(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
+
+  async function makeInvite() {
+    setBusy(true);
+    try {
+      const inv = await api.createInvite();
+      setFresh(inv.link);
+      copy(inv.link);
+    } catch (e) {
+      onError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(identity: string, name: string) {
+    if (!confirm(`Remove ${name} from ${state.group?.name}?\n\nThey keep anything they already downloaded, but they won't see anything new. Everyone else moves to a fresh key automatically.`)) return;
+    try {
+      await api.removeMember(identity);
+    } catch (e) {
+      onError((e as Error).message);
+    }
+  }
+
+  const others = state.invites.filter((i) => i.link !== fresh);
+
   return (
     <Modal title="Invite" onClose={onClose} footer={<button className="btn primary" onClick={onClose}>Done</button>}>
-      <h2>Bring friends into {state.group?.name}</h2>
+      <h2>Bring someone into {state.group?.name}</h2>
       <p>
-        Send this link however you like. When a friend opens it in queueue, they're in. Anyone with the link can see and
-        download what's shared here, so keep it to people you trust.
+        Each link works <strong>once</strong>, for one person, for 7 days. When they open it you get a request with a
+        safety code. Check it matches theirs before letting them in.
       </p>
-      <div className="invite-box">
-        <input className="input" readOnly value={invite} onFocus={(e) => e.target.select()} />
-        <button
-          className="btn"
-          onClick={() => {
-            void api.copy(invite);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1600);
-          }}
-        >
+      {fresh ? (
+        <div className="invite-box">
+          <input className="input" readOnly value={fresh} onFocus={(e) => e.target.select()} />
+          <button className="btn" onClick={() => copy(fresh)}>
+            <IconCopy size={14} />
+            {copied ? "Copied" : "Copy"}
+          </button>
+        </div>
+      ) : (
+        <button className="btn primary" disabled={busy} onClick={() => void makeInvite()}>
           <IconCopy size={14} />
-          {copied ? "Copied" : "Copy"}
+          {busy ? "One sec…" : "Make a link and copy it"}
         </button>
-      </div>
+      )}
+
+      {others.length ? (
+        <div className="field">
+          <span>Unused links · {others.length}</span>
+          <div className="holders">
+            {others.map((i) => (
+              <div className="holder" key={i.id}>
+                <span className="mono faint" style={{ fontSize: 12 }}>
+                  …{i.link.split("/").pop()?.slice(0, 6)}
+                </span>
+                <span className="tag">{daysLeft(i.expires)}</span>
+                <button className="btn small" style={{ marginLeft: "auto" }} onClick={() => void api.cancelInvite(i.id)}>
+                  Cancel
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <div className="field">
         <span>In here now · {state.members.length}</span>
         <div className="holders">
           {state.members.map((m) => (
-            <div className="holder" key={m.key}>
+            <div className="holder" key={m.identity}>
               <Avatar member={m} size={22} showOnline />
-              <span>{m.you ? `${m.name} (you)` : m.name}</span>
-              <span className="tag">{m.online ? "online" : "offline"}</span>
+              <span style={{ flex: 1, display: "flex", gap: 8, alignItems: "center" }}>
+                {m.you ? `${m.name} (you)` : m.name}
+                {m.owner ? <span className="tag">owner</span> : null}
+                {m.online ? null : <span className="tag">offline</span>}
+              </span>
+              {isOwner && !m.you ? (
+                <button className="btn small" onClick={() => void remove(m.identity, m.name)}>
+                  Remove
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
       </div>
+    </Modal>
+  );
+}
+
+export function JoinRequestModal({ state, onError }: { state: AppState; onError: (msg: string) => void }) {
+  const r = state.joinRequests[0];
+  if (!r) return null;
+  const answer = (approve: boolean) => void api.answerJoin(r.id, approve).catch((e: Error) => onError(e.message));
+  return (
+    <Modal
+      title="Someone wants in"
+      onClose={() => answer(false)}
+      footer={
+        <>
+          <button className="btn" onClick={() => answer(false)}>
+            Not them
+          </button>
+          <button className="btn primary" onClick={() => answer(true)}>
+            Codes match, let them in
+          </button>
+        </>
+      }
+    >
+      <h2>
+        {r.name} wants to join {state.group?.name}
+      </h2>
+      <p>Ask {r.name} what code their screen shows. Only let them in if it's exactly this:</p>
+      <div className="safety-code">{r.code}</div>
+      <p className="faint" style={{ fontSize: 12 }}>
+        If the codes don't match, someone else has the link. Say no and send {r.name} a new one.
+      </p>
     </Modal>
   );
 }

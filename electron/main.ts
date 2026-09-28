@@ -1,9 +1,10 @@
 import path from "node:path";
 import fs from "node:fs";
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, powerMonitor, powerSaveBlocker, protocol, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, Notification, powerMonitor, powerSaveBlocker, protocol, shell } from "electron";
 import { dataDir, loadIdentity, loadSettings, saveIdentity, saveSettings, type KeyPair } from "./config";
 import * as groups from "./groups";
 import { Engine } from "./engine";
+import { InviteJoiner } from "./joiner";
 import { Readable } from "node:stream";
 import { mimeFor, scanSources, type LocalFile } from "./ingest";
 import { fetchArtwork, searchMetadata } from "./metadata";
@@ -23,6 +24,8 @@ let identity: Identity | null = null;
 let keyPair: KeyPair | null = null;
 let settings: Settings = loadSettings();
 let engine: Engine | null = null;
+let joiner: InviteJoiner | null = null;
+let notice: string | null = null;
 let pendingLink: string | null = null;
 
 interface Draft {
@@ -35,17 +38,22 @@ interface Draft {
 const drafts = new Map<string, Draft>();
 
 function state(): AppState {
-  const g = groups.activeGroup();
+  const me = identity?.publicKey ?? "";
+  const g = groups.activeGroup(me);
   return {
     identity,
-    group: g ? groups.toInfo(g) : null,
-    groups: groups.loadGroups().groups.map(groups.toInfo),
+    group: g ? groups.toInfo(g, me) : null,
+    groups: groups.loadGroups(me).groups.map((x) => groups.toInfo(x, me)),
     members: engine?.memberList() ?? [],
     posts: engine?.postViews() ?? [],
     transfers: Object.fromEntries(engine?.transfers ?? []),
     settings,
     peers: engine?.peerCount() ?? 0,
     ready: !!engine,
+    invites: engine?.inviteViews() ?? [],
+    joinRequests: engine?.joinRequests() ?? [],
+    pendingJoin: joiner?.view ?? null,
+    notice,
   };
 }
 
@@ -80,12 +88,46 @@ async function startEngine() {
     old.removeAllListeners();
     await old.stop();
   }
-  const g = groups.activeGroup();
+  const g = groups.activeGroup(identity?.publicKey);
   if (!g || !identity || !keyPair) return push();
   const e = new Engine(dataDir("groups", g.id), g, identity, keyPair, () => settings);
   e.on("state", push);
+  e.on("epoch", ({ secret, removed }: { secret: string; removed: string[] }) => {
+    groups.addEpoch(g.id, secret, removed);
+    void startEngine();
+  });
+  e.on("removed", () => {
+    groups.removeGroup(g.id);
+    notice = `You're no longer in ${g.name}. Anything you already downloaded is still on your Mac.`;
+    void startEngine();
+  });
+  e.on("join-request", (r: { name: string }) => {
+    if (Notification.isSupported()) new Notification({ title: `${r.name} wants to join ${g.name}`, body: "Check the safety code with them before letting them in." }).show();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+    }
+  });
   await e.start();
   engine = e;
+  push();
+}
+
+async function startJoiner() {
+  await joiner?.stop();
+  joiner = null;
+  const pending = groups.loadGroups().pending;
+  if (!pending || !identity || !keyPair) return push();
+  const j = new InviteJoiner(pending, keyPair, identity.name);
+  j.on("update", push);
+  j.on("welcome", async (welcome) => {
+    groups.addJoinedGroup(welcome);
+    await j.stop();
+    if (joiner === j) joiner = null;
+    await startEngine();
+  });
+  joiner = j;
+  await j.start();
   push();
 }
 
@@ -231,15 +273,29 @@ function registerIpc() {
   });
 
   handle("createGroup", async (name: string) => {
-    const g = groups.createGroup(name);
+    if (!identity) throw new Error("Pick a name first.");
+    const g = groups.createGroup(name, identity.publicKey);
     await startEngine();
-    return groups.toInfo(g);
+    return groups.toInfo(g, identity.publicKey);
   });
 
   handle("joinGroup", async (invite: string) => {
-    const g = groups.joinGroup(invite);
-    await startEngine();
-    return groups.toInfo(g);
+    groups.setPending(groups.parseInvite(invite));
+    await startJoiner();
+  });
+
+  handle("cancelJoin", async () => {
+    groups.setPending(null);
+    await startJoiner();
+  });
+
+  handle("createInvite", () => requireEngine().createInvite());
+  handle("cancelInvite", (id: string) => requireEngine().cancelInvite(id));
+  handle("answerJoin", (requestId: string, approve: boolean) => requireEngine().answerJoin(requestId, approve));
+  handle("removeMember", (id: string) => requireEngine().removeMember(id));
+  handle("dismissNotice", () => {
+    notice = null;
+    push();
   });
 
   handle("switchGroup", async (id: string) => {
@@ -393,6 +449,7 @@ app.whenReady().then(async () => {
   }
   applyLoginItem();
   await startEngine();
+  await startJoiner();
 });
 
 app.on("window-all-closed", () => {

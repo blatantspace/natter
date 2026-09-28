@@ -4,7 +4,8 @@ import { api } from "./api";
 import { FILTERS, memberMap } from "./format";
 import { AvatarStack } from "./components/Bits";
 import { DetailSheet } from "./components/DetailSheet";
-import { InviteModal, SettingsModal } from "./components/Dialogs";
+import { InviteModal, JoinRequestModal, SettingsModal } from "./components/Dialogs";
+import { JoinWaiting } from "./components/JoinWaiting";
 import { IconChevron, IconGear, IconPlus, IconQueue, IconSearch, IconShare, IconUsers } from "./components/Icons";
 import { Mosaic } from "./components/Mosaic";
 import { Onboarding } from "./components/Onboarding";
@@ -29,10 +30,36 @@ export default function App() {
   }, []);
 
   if (!state) return null;
-  if (!state.identity || !state.group || joinLink) {
-    return <Onboarding key={joinLink ?? "onboard"} state={state} joinLink={joinLink} onDone={() => setJoinLink(null)} />;
+  const notice = state.notice ? (
+    <div className="notice-bar" role="status">
+      {state.notice}
+      <button className="btn small" onClick={() => void api.dismissNotice()}>
+        OK
+      </button>
+    </div>
+  ) : null;
+  if (state.pendingJoin) {
+    return (
+      <>
+        {notice}
+        <JoinWaiting view={state.pendingJoin} />
+      </>
+    );
   }
-  return <Home state={state} />;
+  if (!state.identity || !state.group || joinLink) {
+    return (
+      <>
+        {notice}
+        <Onboarding key={joinLink ?? "onboard"} state={state} joinLink={joinLink} onDone={() => setJoinLink(null)} />
+      </>
+    );
+  }
+  return (
+    <>
+      {notice}
+      <Home state={state} />
+    </>
+  );
 }
 
 function Home({ state }: { state: AppState }) {
@@ -69,7 +96,7 @@ function Home({ state }: { state: AppState }) {
     const kinds = FILTERS.find((f) => f.id === filter)?.kinds;
     let list = state.posts.filter((p) => {
       if (kinds && !kinds.includes(p.meta.kind)) return false;
-      if (person && p.author !== person) return false;
+      if (person && members.get(p.author)?.key !== person) return false;
       if (!q) return true;
       const hay = [p.meta.title, p.meta.subtitle, p.meta.description, p.note, ...(p.meta.genres ?? []), ...(p.meta.creators ?? []), members.get(p.author)?.name]
         .filter(Boolean)
@@ -149,7 +176,7 @@ function Home({ state }: { state: AppState }) {
   }
 
   const group = state.group!;
-  const people = state.members.filter((m) => state.posts.some((p) => p.author === m.key));
+  const people = state.members.filter((m) => state.posts.some((p) => m.keys.includes(p.author)));
 
   return (
     <div className="app-frame">
@@ -357,7 +384,8 @@ function Home({ state }: { state: AppState }) {
           }}
         />
       ) : null}
-      {dialog === "invite" ? <InviteModal state={state} onClose={() => setDialog(null)} /> : null}
+      {dialog === "invite" ? <InviteModal state={state} onClose={() => setDialog(null)} onError={(m) => flash(m, true)} /> : null}
+      <JoinRequestModal state={state} onError={(m) => flash(m, true)} />
       {dialog === "settings" ? <SettingsModal state={state} onClose={() => setDialog(null)} /> : null}
       {toast ? <div className={`toast${toast.error ? " error" : ""}`}>{toast.text}</div> : null}
     </div>

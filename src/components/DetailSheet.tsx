@@ -40,11 +40,11 @@ export function DetailSheet({
   const chatEnd = useRef<HTMLDivElement>(null);
   const me = [...members.values()].find((m) => m.you);
   const author = members.get(post.author) ?? UNKNOWN_MEMBER;
-  const mine = post.author === me?.key;
+  const mine = author.you;
   const have = !!post.localPath;
   const busy = transfer && (transfer.state === "queued" || transfer.state === "downloading");
   const pct = transfer?.total ? Math.round((transfer.bytes / transfer.total) * 100) : 0;
-  const holdersOnline = post.holders.filter((k) => members.get(k)?.online && k !== me?.key).length;
+  const holdersOnline = post.holders.filter((k) => members.get(k)?.online && !members.get(k)?.you).length;
 
   useEffect(() => {
     let live = true;
@@ -209,7 +209,7 @@ export function DetailSheet({
                 <div className="holder" key={k}>
                   <Avatar member={m} size={22} showOnline />
                   <span>{m.you ? "You" : m.name}</span>
-                  <span className="tag">{k === post.author ? "shared it" : m.you ? "your copy" : m.online ? "online" : "offline"}</span>
+                  <span className="tag">{m === author ? "shared it" : m.you ? "your copy" : m.online ? "online" : "offline"}</span>
                 </div>
               );
             })}

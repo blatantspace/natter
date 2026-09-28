@@ -5,3 +5,5 @@ declare module "hypercore";
 declare module "hypercore-crypto";
 declare module "b4a";
 declare module "compact-encoding";
+declare module "sodium-universal";
+declare module "protomux";
