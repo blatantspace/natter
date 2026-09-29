@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AppState, PostView } from "../shared/types";
+import type { AppState, LibraryItem, PostView } from "../shared/types";
 import { api } from "./api";
 import { FILTERS, memberMap } from "./format";
 import { AvatarStack } from "./components/Bits";
 import { DetailSheet } from "./components/DetailSheet";
 import { InviteModal, JoinRequestModal, SettingsModal } from "./components/Dialogs";
+import { BulkBar, FavouritesModal } from "./components/Favourites";
 import { JoinWaiting } from "./components/JoinWaiting";
 import { IconChevron, IconGear, IconPlus, IconQueue, IconSearch, IconShare, IconUsers } from "./components/Icons";
 import { Mosaic } from "./components/Mosaic";
@@ -74,7 +75,21 @@ function Home({ state }: { state: AppState }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [toast, setToast] = useState<{ text: string; error?: boolean } | null>(null);
+  const [fav, setFav] = useState<{ found?: { paths: string[]; items: LibraryItem[] } } | null>(null);
   const dragDepth = useRef(0);
+
+  useEffect(() => {
+    if (state.settings.favouritesAsked) return;
+    setFav({});
+    void api.updateSettings({ favouritesAsked: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const route = useCallback(async (paths: string[]) => {
+    const items = await api.scanLibrary(paths).catch(() => [] as LibraryItem[]);
+    if (items.length >= 2) setFav({ found: { paths, items } });
+    else setSharePaths(paths);
+  }, []);
 
   const members = useMemo(() => memberMap(state.members), [state.members]);
   const friendsOnline = state.members.filter((m) => !m.you && m.online).length;
@@ -126,11 +141,11 @@ function Home({ state }: { state: AppState }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !sharePaths && !dialog) setSelectedId(null);
+      if (e.key === "Escape" && !sharePaths && !dialog && !fav) setSelectedId(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [sharePaths, dialog]);
+  }, [sharePaths, dialog, fav]);
 
   useEffect(() => {
     const hasFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files");
@@ -152,7 +167,7 @@ function Home({ state }: { state: AppState }) {
       dragDepth.current = 0;
       setDragging(false);
       const paths = [...(e.dataTransfer?.files ?? [])].map((f) => api.pathForFile(f)).filter(Boolean);
-      if (paths.length) setSharePaths(paths);
+      if (paths.length) void route(paths);
     };
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragover", over);
@@ -164,15 +179,15 @@ function Home({ state }: { state: AppState }) {
       window.removeEventListener("dragleave", leave);
       window.removeEventListener("drop", drop);
     };
-  }, []);
+  }, [route]);
 
   useEffect(() => {
-    (window as unknown as { queueueShare: (paths: string[]) => void }).queueueShare = setSharePaths;
-  }, []);
+    (window as unknown as { queueueShare: (paths: string[]) => void }).queueueShare = (paths) => void route(paths);
+  }, [route]);
 
   async function pickAndShare() {
     const paths = await api.pickSources();
-    if (paths.length) setSharePaths(paths);
+    if (paths.length) await route(paths);
   }
 
   const group = state.group!;
@@ -217,6 +232,15 @@ function Home({ state }: { state: AppState }) {
                   </button>
                 ))}
                 <hr />
+                <button
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setFav({});
+                  }}
+                >
+                  <IconShare size={13} />
+                  Add a folder of favourites
+                </button>
                 <button
                   onClick={async () => {
                     setMenuOpen(false);
@@ -296,6 +320,8 @@ function Home({ state }: { state: AppState }) {
           </select>
         </div>
 
+        {state.bulk ? <BulkBar bulk={state.bulk} /> : null}
+
         <div className="main-body">
           {viewing ? (
             <Viewer
@@ -327,10 +353,13 @@ function Home({ state }: { state: AppState }) {
                 <div className="drop-box">
                   <IconShare size={28} />
                   <h2>Drop something good here</h2>
-                  <p>A movie folder, an album, a book, last weekend's photos. queueue finds the artwork and details for everyone.</p>
+                  <p>A movie folder, an album, a book, or your whole Movies folder. queueue finds the artwork and makes a tile for each one.</p>
                   <div className="row" style={{ marginTop: 6 }}>
-                    <button className="btn primary" onClick={() => void pickAndShare()}>
-                      Choose files or folders
+                    <button className="btn primary" onClick={() => setFav({})}>
+                      Add your favourites
+                    </button>
+                    <button className="btn" onClick={() => void pickAndShare()}>
+                      Share one thing
                     </button>
                     <button className="btn" onClick={() => setDialog("invite")}>
                       Invite friends
@@ -381,6 +410,23 @@ function Home({ state }: { state: AppState }) {
             setSelectedId(id);
             flash("Shared. Friends will see it as soon as they're online.");
           }}
+        />
+      ) : null}
+      {fav ? (
+        <FavouritesModal
+          key={fav.found ? fav.found.paths.join("|") : "ask"}
+          groupName={group.name}
+          items={fav.found}
+          onClose={() => setFav(null)}
+          onShareOne={
+            fav.found
+              ? (paths) => {
+                  setFav(null);
+                  setSharePaths(paths);
+                }
+              : undefined
+          }
+          onError={(m) => flash(m, true)}
         />
       ) : null}
       {dialog === "invite" ? <InviteModal state={state} onClose={() => setDialog(null)} onError={(m) => flash(m, true)} /> : null}

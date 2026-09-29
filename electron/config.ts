@@ -80,6 +80,7 @@ export function loadSettings(): Settings {
     downloadDir: path.join(os.homedir(), "Downloads", "queueue"),
     tmdbKey: "",
     openAtLogin: true,
+    favouritesAsked: false,
   };
   return { ...defaults, ...readJson<Partial<Settings>>(settingsFile(), {}) };
 }

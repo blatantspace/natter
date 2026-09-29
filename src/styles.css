@@ -1884,3 +1884,88 @@ button.file-row:hover {
   border-radius: 6px;
   box-shadow: var(--bevel);
 }
+
+/* ---------- favourites ---------- */
+
+.fav-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 440px;
+}
+
+.fav-folders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fav-folder {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--radius);
+  background: var(--window-face);
+  text-align: left;
+}
+
+.fav-folder:hover {
+  border-color: var(--rule);
+  background: var(--accent);
+}
+
+.fav-folder .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+}
+
+.fav-review {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fav-row {
+  cursor: pointer;
+}
+
+.fav-row.done {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bulk-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  border-bottom: var(--chrome) solid var(--rule);
+  background: var(--accent);
+  font-size: var(--text-sm);
+}
+
+.bulk-bar .grow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bulk-track {
+  display: block;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--window);
+  border: 1px solid var(--rule-soft);
+  overflow: hidden;
+}
+
+.bulk-track > span {
+  display: block;
+  height: 100%;
+  background: var(--hilite);
+  transition: width 0.3s ease;
+}

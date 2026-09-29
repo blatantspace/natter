@@ -1,27 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Candidate, FileKind, Kind, PostMeta, PublishProgress, ShareDraft } from "../../shared/types";
+import { applyCandidate, closeMatch } from "../../shared/match";
 import { api } from "../api";
 import { ALL_KINDS, formatBytes, KIND_LABEL } from "../format";
 import { Art, Modal } from "./Bits";
 import { IconKind, IconSearch } from "./Icons";
 
 type Phase = "scanning" | "review" | "publishing";
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
-
-function applyCandidate(base: PostMeta, c: Candidate): PostMeta {
-  return {
-    ...base,
-    kind: c.kind === "music" && base.kind === "audio" ? "music" : base.kind,
-    title: c.title,
-    subtitle: c.subtitle ?? base.subtitle,
-    year: c.year ?? base.year,
-    description: c.description ?? base.description,
-    creators: c.creators ?? base.creators,
-    genres: c.genres?.length ? c.genres : base.genres,
-    extra: { ...(base.extra ?? {}), ...(c.extra ?? {}) },
-  };
-}
 
 export function ShareSheet({
   paths,
@@ -55,9 +40,8 @@ export function ShareSheet({
         setDraft(d);
         setCandidates(d.candidates);
         setQuery(d.guess.title);
-        const first = d.candidates[0];
-        const close = first && norm(first.title).length > 1 && (norm(first.title).includes(norm(d.guess.title)) || norm(d.guess.title).includes(norm(first.title)));
-        if (first && close) {
+        const first = closeMatch(d.guess, d.candidates);
+        if (first) {
           setPicked(first);
           setMeta(applyCandidate(d.guess, first));
           setArtChoice(first.artworkUrl || !d.localArtwork ? "candidate" : "local");

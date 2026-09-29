@@ -674,6 +674,7 @@ export class Engine extends EventEmitter {
     if (post.meta.artwork) await d.del(post.meta.artwork);
     if (post.hashes) await d.del(post.hashes);
     delete this.local.files[postId];
+    delete this.local.paths[postId];
     this.saveLocal();
     await d.del(`/posts/${postId}`);
     for (const m of this.mine) await m.drive.del(`/holds/${postId}`).catch(() => {});
@@ -909,6 +910,19 @@ export class Engine extends EventEmitter {
   localPath(postId: string): string | undefined {
     const p = this.local.paths[postId];
     return p && fs.existsSync(p) ? p : undefined;
+  }
+
+  /** True when a path is already shared by me or sits inside something I downloaded. */
+  knows(): (abs: string) => boolean {
+    const files = new Set(Object.values(this.local.files).flat());
+    const roots = Object.entries(this.local.paths)
+      .filter(([id]) => !this.local.files[id])
+      .map(([, p]) => p);
+    const shared = Object.entries(this.local.paths)
+      .filter(([id]) => this.local.files[id])
+      .map(([, p]) => p);
+    const inside = (abs: string, root: string) => abs === root || abs.startsWith(root + path.sep);
+    return (abs) => files.has(abs) || shared.includes(abs) || roots.some((r) => inside(abs, r));
   }
 
   private pruneInvites() {

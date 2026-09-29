@@ -139,7 +139,7 @@ async function wikipedia(query: string, kind: Kind): Promise<Candidate[]> {
     id: String(p.pageid),
     url: p.fullurl,
     kind,
-    title: p.title.replace(/\s*\((film|TV series|album|novel|book|band)\)$/i, ""),
+    title: p.title.replace(/\s*\((\d{4}\s+)?(\w+\s+)?(film|TV series|miniseries|album|novel|book|band)\)$/i, ""),
     subtitle: p.description,
     year: yearOf(p.description?.match(/\b(19|20)\d{2}\b/)?.[0]),
     description: p.extract || undefined,

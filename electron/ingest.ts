@@ -86,8 +86,8 @@ export function cleanName(raw: string): { title: string; year?: number; season?:
     s = s.slice(0, ep.index).trim();
   }
   let year: number | undefined;
-  const y = s.match(/[([]?\b(19[2-9]\d|20[0-4]\d)\b[)\]]?/);
-  if (y && y.index! > 0) {
+  const y = [...s.matchAll(/[([]?\b(19[2-9]\d|20[0-4]\d)\b[)\]]?/g)].filter((m) => m.index! > 0).pop();
+  if (y) {
     year = Number(y[1]);
     s = s.slice(0, y.index).trim();
   }
@@ -157,14 +157,25 @@ function dominant(files: LocalFile[]): FileKind {
   return byBytes;
 }
 
+const SEASON_DIR = /^(season|series|s)\s*\d{1,2}$/i;
+const GENERIC_DIR = /^(music|media|itunes|itunes media|music\.localized|media\.localized|downloads|desktop|documents|albums?|compilations|unknown artist|various artists|tmp|private|volumes|users)$/i;
+
+/** The name to read a title from: "Show/Season 1" reads as "Show Season 1", loose episodes read from the first file. */
+export function sourceName(sources: string[]): string {
+  const first = sources[0];
+  const name = path.basename(first);
+  if (sources.length === 1) return SEASON_DIR.test(name) ? `${path.basename(path.dirname(first))} ${name}` : name;
+  if (sources.every((s) => EPISODE.test(path.basename(s)))) return name;
+  return path.basename(path.dirname(first));
+}
+
 const fmtDate = (d: Date) => d.toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 
 export async function scanSources(sources: string[], workDir: string): Promise<Scan> {
   const files = listSources(sources);
   if (!files.length) throw new Error("Nothing to share in there. Hidden files are skipped.");
   const totalSize = files.reduce((n, f) => n + f.size, 0);
-  const rootName = path.basename(sources[0]);
-  const base = cleanName(sources.length === 1 ? rootName : path.basename(path.dirname(sources[0])));
+  const base = cleanName(sourceName(sources));
   const main = dominant(files);
   fs.mkdirSync(workDir, { recursive: true });
 
@@ -224,7 +235,9 @@ export async function scanSources(sources: string[], workDir: string): Promise<S
       }
       if (i > 200) break;
     }
-    const artist = [...artists.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const parent = sources.length === 1 && fs.statSync(sources[0]).isDirectory() ? path.basename(path.dirname(sources[0])) : "";
+    const folderArtist = parent && !GENERIC_DIR.test(parent) ? parent : undefined;
+    const artist = [...artists.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? folderArtist;
     guess.kind = tracks.length > 1 || album ? "music" : "audio";
     guess.title = album || (tracks.length === 1 ? String(tracks[0].tags?.title ?? base.title) : base.title);
     if (artist) {

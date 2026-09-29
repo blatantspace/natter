@@ -6,9 +6,11 @@ import * as groups from "./groups";
 import { Engine } from "./engine";
 import { InviteJoiner } from "./joiner";
 import { Readable } from "node:stream";
-import { mimeFor, scanSources, type LocalFile } from "./ingest";
+import { cleanName, mimeFor, scanSources, sourceName, type LocalFile } from "./ingest";
 import { fetchArtwork, searchMetadata } from "./metadata";
-import type { AppState, Candidate, Identity, Kind, PostMeta, PublishInput, Settings, ShareDraft } from "../shared/types";
+import { findItems, suggestedFolders } from "./library";
+import { applyCandidate, closeMatch } from "../shared/match";
+import type { AppState, BulkView, Candidate, Identity, Kind, PostMeta, PublishInput, Settings, ShareDraft } from "../shared/types";
 
 const profile = process.env.QUEUEUE_PROFILE;
 if (profile) app.setPath("userData", path.join(app.getPath("appData"), `queueue-${profile}`));
@@ -54,6 +56,7 @@ function state(): AppState {
     joinRequests: engine?.joinRequests() ?? [],
     pendingJoin: joiner?.view ?? null,
     notice,
+    bulk,
   };
 }
 
@@ -128,6 +131,84 @@ async function startJoiner() {
   });
   joiner = j;
   await j.start();
+  push();
+}
+
+function knows(): (abs: string) => boolean {
+  const known = engine?.knows() ?? (() => false);
+  const downloads = settings.downloadDir;
+  return (abs) => known(abs) || abs === downloads || abs.startsWith(downloads + path.sep);
+}
+
+async function publishDraft(
+  e: Engine,
+  d: Draft,
+  input: PostMeta,
+  cand: Candidate | null | undefined,
+  note: string | undefined,
+  onProgress: (bytes: number, total: number) => void,
+): Promise<string> {
+  let artwork: { data: Buffer; ext: string; aspect?: number } | null = null;
+  if (cand?.artworkUrl) artwork = await fetchArtwork(cand.artworkUrl);
+  if (!artwork && d.artworkFile && fs.existsSync(d.artworkFile)) {
+    artwork = { data: fs.readFileSync(d.artworkFile), ext: path.extname(d.artworkFile).slice(1) || "jpg" };
+  }
+  if (artwork) artwork.aspect = imageAspect(artwork.data);
+  const meta: PostMeta = { ...input };
+  if (cand) meta.source = { provider: cand.provider, id: cand.id, url: cand.url };
+  const single = d.sources.length === 1 && fs.statSync(d.sources[0]).isDirectory();
+  const localPath = single ? d.sources[0] : path.dirname(d.sources[0]);
+  try {
+    return await e.publish({ files: d.files, meta, note, artwork, localPath, onProgress });
+  } finally {
+    fs.rmSync(d.workDir, { recursive: true, force: true });
+  }
+}
+
+let bulk: BulkView | null = null;
+let bulkQueue: string[][] = [];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function runBulk() {
+  while (bulk && bulkQueue.length) {
+    const src = bulkQueue.shift()!;
+    const e = engine;
+    if (!e) break;
+    bulk.current = cleanName(sourceName(src)).title;
+    push();
+    const workDir = dataDir("drafts", `bulk-${Math.random().toString(36).slice(2, 10)}`);
+    try {
+      if (src.some(knows())) throw new Error("already shared");
+      const scan = await scanSources(src, workDir);
+      const g = scan.guess;
+      const eitherOrder = g.kind === "book" && g.creators?.length;
+      const candidates = await searchMetadata({
+        query: eitherOrder ? `${g.creators![0]} - ${g.title}` : g.title,
+        kind: g.kind,
+        year: g.year,
+        creator: eitherOrder ? undefined : g.creators?.[0],
+        tmdbKey: settings.tmdbKey,
+      }).catch(() => []);
+      const cand = closeMatch(scan.guess, candidates, true);
+      const meta = cand ? applyCandidate(scan.guess, cand) : scan.guess;
+      await publishDraft(e, { sources: src, files: scan.files, guess: scan.guess, artworkFile: scan.artworkFile, workDir }, meta, cand, undefined, () => {});
+      bulk.added++;
+    } catch {
+      bulk.failed++;
+      fs.rmSync(workDir, { recursive: true, force: true });
+    }
+    bulk.done++;
+    push();
+    await sleep(1100);
+  }
+  if (bulk) {
+    bulk.running = false;
+    bulk.current = undefined;
+    bulk.total = bulk.done;
+    if (bulk.added && Notification.isSupported() && !win?.isFocused()) {
+      new Notification({ title: `Added ${bulk.added} favourite${bulk.added === 1 ? "" : "s"}`, body: "Your friends will see them next time they're online." }).show();
+    }
+  }
   push();
 }
 
@@ -349,29 +430,44 @@ function registerIpc() {
     const e = requireEngine();
     const d = drafts.get(input.draftId);
     if (!d) throw new Error("That share draft expired. Drop the files again.");
-    let artwork: { data: Buffer; ext: string; aspect?: number } | null = null;
-    const cand: Candidate | null | undefined = input.candidate;
-    if (cand?.artworkUrl) artwork = await fetchArtwork(cand.artworkUrl);
-    if (!artwork && d.artworkFile && fs.existsSync(d.artworkFile)) {
-      artwork = { data: fs.readFileSync(d.artworkFile), ext: path.extname(d.artworkFile).slice(1) || "jpg" };
-    }
-    if (artwork) artwork.aspect = imageAspect(artwork.data);
-    const meta: PostMeta = { ...input.meta };
-    if (cand) meta.source = { provider: cand.provider, id: cand.id, url: cand.url };
-    const single = d.sources.length === 1 && fs.statSync(d.sources[0]).isDirectory();
-    const localPath = single ? d.sources[0] : path.dirname(d.sources[0]);
-    const postId = await e.publish({
-      files: d.files,
-      meta,
-      note: input.note,
-      artwork,
-      localPath,
-      onProgress: (bytes, total) => win?.webContents.send("publish-progress", { draftId: input.draftId, bytes, total, done: false }),
-    });
+    const postId = await publishDraft(e, d, input.meta, input.candidate, input.note, (bytes, total) =>
+      win?.webContents.send("publish-progress", { draftId: input.draftId, bytes, total, done: false }),
+    );
     win?.webContents.send("publish-progress", { draftId: input.draftId, bytes: 1, total: 1, done: true, postId });
-    fs.rmSync(d.workDir, { recursive: true, force: true });
     drafts.delete(input.draftId);
     return postId;
+  });
+
+  handle("suggestFolders", () => suggestedFolders(knows()));
+  handle("pickFolders", async () => {
+    const r = await dialog.showOpenDialog(win!, {
+      title: "Pick a folder of favourites",
+      buttonLabel: "Look inside",
+      properties: ["openDirectory", "multiSelections"],
+    });
+    return r.canceled ? [] : r.filePaths;
+  });
+  handle("scanLibrary", (paths: string[]) => findItems(paths, knows()));
+  handle("addLibrary", (items: string[][]) => {
+    requireEngine();
+    if (bulk?.running) {
+      bulkQueue.push(...items);
+      bulk.total += items.length;
+    } else {
+      bulkQueue = [...items];
+      bulk = { total: items.length, done: 0, added: 0, failed: 0, running: true };
+      void runBulk();
+    }
+    push();
+  });
+  handle("stopBulk", () => {
+    bulkQueue = [];
+    if (bulk) bulk.total = bulk.done + (bulk.current ? 1 : 0);
+    push();
+  });
+  handle("dismissBulk", () => {
+    if (!bulk?.running) bulk = null;
+    push();
   });
 
   handle("deletePost", (postId: string) => requireEngine().deletePost(postId));

@@ -146,6 +146,33 @@ export interface Settings {
   downloadDir: string;
   tmdbKey: string;
   openAtLogin: boolean;
+  favouritesAsked: boolean;
+}
+
+export interface LibraryItem {
+  path: string;
+  paths: string[];
+  title: string;
+  year?: number;
+  kind: "video" | "audio" | "image" | "document";
+  size: number;
+  suggested: boolean;
+  already?: boolean;
+}
+
+export interface SuggestedFolder {
+  label: string;
+  path: string;
+  count: number;
+}
+
+export interface BulkView {
+  total: number;
+  done: number;
+  added: number;
+  failed: number;
+  current?: string;
+  running: boolean;
 }
 
 export interface AppState {
@@ -162,6 +189,7 @@ export interface AppState {
   joinRequests: JoinRequest[];
   pendingJoin: PendingJoinView | null;
   notice: string | null;
+  bulk: BulkView | null;
 }
 
 export interface ShareDraft {
@@ -215,6 +243,13 @@ export interface QueueueApi {
   searchMetadata(draftId: string, query: string, kind: Kind, year?: number): Promise<Candidate[]>;
   publish(input: PublishInput): Promise<string>;
   deletePost(postId: string): Promise<void>;
+
+  suggestFolders(): Promise<SuggestedFolder[]>;
+  pickFolders(): Promise<string[]>;
+  scanLibrary(paths: string[]): Promise<LibraryItem[]>;
+  addLibrary(items: string[][]): Promise<void>;
+  stopBulk(): Promise<void>;
+  dismissBulk(): Promise<void>;
 
   comment(postId: string, text: string): Promise<void>;
   getComments(postId: string): Promise<Comment[]>;
