@@ -14,8 +14,9 @@ export const KIND_LABEL: Record<Kind, string> = {
   mixed: "Bundle",
 };
 
-export const FILTERS: { id: string; label: string; kinds: Kind[] }[] = [
+export const FILTERS: { id: string; label: string; kinds: Kind[] | "clips" }[] = [
   { id: "watch", label: "Watch", kinds: ["movie", "tv", "video"] },
+  { id: "clips", label: "Clips", kinds: "clips" },
   { id: "listen", label: "Listen", kinds: ["music", "audio"] },
   { id: "read", label: "Read", kinds: ["book", "document"] },
   { id: "photos", label: "Photos", kinds: ["photos", "image"] },

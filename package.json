@@ -2,7 +2,7 @@
   "name": "queueue",
   "version": "0.1.0",
   "private": true,
-  "description": "A shared mosaic for you and your friends, peer to peer",
+  "description": "A shared queueue for you and your friends, peer to peer",
   "type": "module",
   "main": "out/main/main.js",
   "scripts": {

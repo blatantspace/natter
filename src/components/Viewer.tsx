@@ -69,9 +69,9 @@ export function Viewer({
   return (
     <section className="viewer" aria-label={`Viewing ${post.meta.title}`}>
       <div className="viewer-head">
-        <button className="btn small" onClick={onClose} title="Back to the mosaic (Esc)">
+        <button className="btn small" onClick={onClose} title="Back to your queueue (Esc)">
           <IconArrow size={12} />
-          Mosaic
+          queueue
         </button>
         <div className="grow viewer-title">
           <strong>{post.meta.title}</strong>

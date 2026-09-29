@@ -147,6 +147,7 @@ export interface Settings {
   tmdbKey: string;
   openAtLogin: boolean;
   favouritesAsked: boolean;
+  autoplayClips: boolean;
 }
 
 export interface LibraryItem {

@@ -1,6 +1,6 @@
 # queueue
 
-A shared mosaic for you and your friends. Drop in a movie folder, an album, a book or a photo dump. queueue finds the artwork and details, everyone in your queueue sees it as a tile, chats about it, and pulls a real copy straight from whoever has one. No server in the middle.
+A shared queueue for you and your friends. Drop in a movie folder, an album, a book or a photo dump. queueue finds the artwork and details, everyone in your queueue sees it as a tile, chats about it, and pulls a real copy straight from whoever has one. No server in the middle.
 
 ## How it works
 

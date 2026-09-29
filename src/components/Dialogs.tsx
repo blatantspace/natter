@@ -199,6 +199,10 @@ export function SettingsModal({ state, onClose }: { state: AppState; onClose: ()
           </span>
         </div>
         <label className="toggle">
+          <input type="checkbox" checked={s.autoplayClips} onChange={(e) => setS({ ...s, autoplayClips: e.target.checked })} />
+          Play short clips right on their tiles, muted (grabs a copy of clips under 3 minutes)
+        </label>
+        <label className="toggle">
           <input type="checkbox" checked={s.openAtLogin} onChange={(e) => setS({ ...s, openAtLogin: e.target.checked })} />
           Start queueue when I log in
         </label>

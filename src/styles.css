@@ -576,15 +576,15 @@ textarea {
   background: var(--window-face);
 }
 
-.mosaic-scroll {
+.queue-scroll {
   flex: 1;
   overflow-y: auto;
   padding: 18px;
 }
 
-/* ---------- mosaic ---------- */
+/* ---------- queue ---------- */
 
-.mosaic {
+.queue-grid {
   columns: 5 220px;
   column-gap: 16px;
 }
@@ -686,6 +686,23 @@ textarea {
   bottom: 8px;
   right: 8px;
   background: var(--accent);
+}
+
+.badge.clip-length {
+  bottom: 8px;
+  left: 8px;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+.tile-clip {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
 }
 
 .progress {

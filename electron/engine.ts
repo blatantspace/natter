@@ -16,6 +16,7 @@ import type { LocalFile } from "./ingest";
 import { CHUNK, HASH_BYTES, chunkCount, chunkDataEncoding, hashChunk, hashFiles, readChunk, type ChunkData, type ChunkRequest } from "./files";
 import { INVITE_PROTOCOL, type Welcome } from "./joiner";
 import { openSealed, safetyCode, sealTo, signJson, verifyJson } from "./seal";
+import { shortClip } from "../shared/short";
 import type { Comment, Identity, InviteView, JoinRequest, Member, Post, PostMeta, PostView, ReactionView, Settings, Transfer } from "../shared/types";
 
 interface Profile {
@@ -898,12 +899,12 @@ export class Engine extends EventEmitter {
 
   private autoDownload() {
     const s = this.settings();
-    if (!s.autoDownload) return;
+    if (!s.autoDownload && !s.autoplayClips) return;
     const max = s.autoDownloadMaxMB * 1024 * 1024;
     for (const p of this.allPosts()) {
       if (this.isMine(p.author) || this.local.paths[p.id] || this.transfers.has(p.id)) continue;
-      if (p.totalSize > max) continue;
-      this.enqueueDownload(p.id);
+      const wanted = (s.autoDownload && p.totalSize <= max) || (s.autoplayClips && shortClip(p));
+      if (wanted) this.enqueueDownload(p.id);
     }
   }
 

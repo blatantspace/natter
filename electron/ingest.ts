@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { parseFile } from "music-metadata";
 import exifr from "exifr";
+import { SHORT_MAX_SECONDS } from "../shared/short";
 import type { FileEntry, FileKind, Kind, PostMeta } from "../shared/types";
 
 const run = promisify(execFile);
@@ -112,7 +113,11 @@ async function ffprobe(abs: string): Promise<Record<string, string | number>> {
     const v = (j.streams || []).find((s: { codec_type: string }) => s.codec_type === "video");
     const tags: Record<string, string | number> = {};
     if (j.format?.duration) tags.duration = Math.round(Number(j.format.duration));
-    if (v?.width) tags.resolution = `${v.width}×${v.height}`;
+    if (v?.width && v?.height) {
+      tags.width = Number(v.width);
+      tags.height = Number(v.height);
+      tags.resolution = `${v.width}×${v.height}`;
+    }
     if (v?.codec_name) tags.codec = v.codec_name;
     if (j.format?.tags?.title) tags.title = j.format.tags.title;
     return tags;
@@ -130,6 +135,21 @@ async function videoFrame(abs: string, out: string, duration?: number): Promise<
     return fs.existsSync(out);
   } catch {
     return false;
+  }
+}
+
+/** macOS Quick Look still, for Macs without ffmpeg. */
+async function quickLookFrame(abs: string, out: string): Promise<boolean> {
+  const dir = path.join(path.dirname(out), "ql");
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    await run("/usr/bin/qlmanage", ["-t", "-s", "900", "-o", dir, abs], { timeout: 20000 });
+    const png = fs.readdirSync(dir).find((f) => f.endsWith(".png"));
+    return !!png && (await thumbnail(path.join(dir, png), out, 900));
+  } catch {
+    return false;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -187,19 +207,35 @@ export async function scanSources(sources: string[], workDir: string): Promise<S
     const episodic = videos.filter((v) => EPISODE.test(v.path)).length;
     const first = cleanName(path.basename(videos[0].path));
     const isTv = episodic >= 1 || base.season !== undefined || first.season !== undefined;
-    guess.kind = isTv ? "tv" : base.year || first.year || videos.length === 1 ? "movie" : "video";
+    const tags = await ffprobe(videos[0].abs);
+    if (!tags.duration) {
+      try {
+        const { format } = await parseFile(videos[0].abs, { duration: true, skipCovers: true });
+        if (format.duration) tags.duration = Math.round(format.duration);
+      } catch {
+        // not a container music-metadata reads
+      }
+    }
+    videos[0].tags = tags;
+    const seconds = Number(tags.duration) || 0;
+    const isClip = videos.length === 1 && seconds > 0 && seconds <= SHORT_MAX_SECONDS;
+    const clipLike = isClip || (videos.length === 1 && seconds > 0 && seconds < 20 * 60);
+    guess.kind = isTv ? "tv" : base.year || first.year || (videos.length === 1 && !clipLike) ? "movie" : "video";
     if (sources.length === 1 && !fs.statSync(sources[0]).isDirectory()) Object.assign(guess, { title: first.title, year: first.year });
     if (isTv) {
       const season = base.season ?? first.season;
       if (season !== undefined) guess.subtitle = `Season ${season}`;
       guess.extra!.episodes = videos.length;
     }
-    const tags = await ffprobe(videos[0].abs);
-    videos[0].tags = tags;
-    if (Number(tags.duration) >= 60) guess.extra!.runtime = `${Math.round(Number(tags.duration) / 60)} min`;
+    if (isClip) {
+      guess.kind = "video";
+      if (tags.width && tags.height) guess.artworkAspect = Number(tags.width) / Number(tags.height);
+    }
+    if (seconds >= 60) guess.extra!.runtime = `${Math.round(seconds / 60)} min`;
+    else if (seconds > 0) guess.extra!.runtime = `${seconds} sec`;
     if (tags.resolution) guess.extra!.resolution = tags.resolution;
     const frame = path.join(workDir, "frame.jpg");
-    if (await videoFrame(videos[0].abs, frame, Number(tags.duration) || undefined)) artworkFile = frame;
+    if ((await videoFrame(videos[0].abs, frame, seconds || undefined)) || (await quickLookFrame(videos[0].abs, frame))) artworkFile = frame;
   } else if (main === "audio") {
     const tracks = files.filter((f) => f.kind === "audio");
     const artists = new Map<string, number>();

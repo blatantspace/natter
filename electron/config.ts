@@ -81,6 +81,7 @@ export function loadSettings(): Settings {
     tmdbKey: "",
     openAtLogin: true,
     favouritesAsked: false,
+    autoplayClips: true,
   };
   return { ...defaults, ...readJson<Partial<Settings>>(settingsFile(), {}) };
 }

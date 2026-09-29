@@ -10,6 +10,7 @@ import { cleanName, mimeFor, scanSources, sourceName, type LocalFile } from "./i
 import { fetchArtwork, searchMetadata } from "./metadata";
 import { findItems, suggestedFolders } from "./library";
 import { applyCandidate, closeMatch } from "../shared/match";
+import { shortClip } from "../shared/short";
 import type { AppState, BulkView, Candidate, Identity, Kind, PostMeta, PublishInput, Settings, ShareDraft } from "../shared/types";
 
 const profile = process.env.QUEUEUE_PROFILE;
@@ -182,13 +183,15 @@ async function runBulk() {
       const scan = await scanSources(src, workDir);
       const g = scan.guess;
       const eitherOrder = g.kind === "book" && g.creators?.length;
-      const candidates = await searchMetadata({
-        query: eitherOrder ? `${g.creators![0]} - ${g.title}` : g.title,
-        kind: g.kind,
-        year: g.year,
-        creator: eitherOrder ? undefined : g.creators?.[0],
-        tmdbKey: settings.tmdbKey,
-      }).catch(() => []);
+      const candidates = shortClip(scan)
+        ? []
+        : await searchMetadata({
+            query: eitherOrder ? `${g.creators![0]} - ${g.title}` : g.title,
+            kind: g.kind,
+            year: g.year,
+            creator: eitherOrder ? undefined : g.creators?.[0],
+            tmdbKey: settings.tmdbKey,
+          }).catch(() => []);
       const cand = closeMatch(scan.guess, candidates, true);
       const meta = cand ? applyCandidate(scan.guess, cand) : scan.guess;
       await publishDraft(e, { sources: src, files: scan.files, guess: scan.guess, artworkFile: scan.artworkFile, workDir }, meta, cand, undefined, () => {});
@@ -403,7 +406,7 @@ function registerIpc() {
     const workDir = dataDir("drafts", draftId);
     const scan = await scanSources(paths, workDir);
     drafts.set(draftId, { sources: paths, files: scan.files, guess: scan.guess, artworkFile: scan.artworkFile, workDir });
-    const candidates = await searchMetadata({
+    const candidates = shortClip(scan) ? [] : await searchMetadata({
       query: scan.guess.title,
       kind: scan.guess.kind,
       year: scan.guess.year,

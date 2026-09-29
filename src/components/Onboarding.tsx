@@ -70,7 +70,7 @@ export function Onboarding({ state, joinLink, onDone }: { state: AppState; joinL
             <>
               <h1>Share the good stuff with your friends.</h1>
               <p>
-                Drop in movies, albums, books and photo folders. Your friends see them in a shared mosaic, chat about them,
+                Drop in movies, albums, books and photo folders. Your friends see them in your shared queueue, chat about them,
                 and pull a real copy straight from your Mac. No server in the middle.
               </p>
               <label className="field">

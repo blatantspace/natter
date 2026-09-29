@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AppState, LibraryItem, PostView } from "../shared/types";
 import { api } from "./api";
+import { shortClip } from "../shared/short";
 import { FILTERS, memberMap } from "./format";
 import { AvatarStack } from "./components/Bits";
 import { DetailSheet } from "./components/DetailSheet";
@@ -8,7 +9,7 @@ import { InviteModal, JoinRequestModal, SettingsModal } from "./components/Dialo
 import { BulkBar, FavouritesModal } from "./components/Favourites";
 import { JoinWaiting } from "./components/JoinWaiting";
 import { IconChevron, IconGear, IconPlus, IconQueue, IconSearch, IconShare, IconUsers } from "./components/Icons";
-import { Mosaic } from "./components/Mosaic";
+import { QueueGrid } from "./components/Mosaic";
 import { Onboarding } from "./components/Onboarding";
 import { ShareSheet } from "./components/ShareSheet";
 import { Viewer } from "./components/Viewer";
@@ -102,7 +103,10 @@ function Home({ state }: { state: AppState }) {
 
   const counts = useMemo(() => {
     const out: Record<string, number> = { all: state.posts.length };
-    for (const f of FILTERS) out[f.id] = state.posts.filter((p) => f.kinds.includes(p.meta.kind)).length;
+    for (const f of FILTERS) {
+      out[f.id] =
+        f.kinds === "clips" ? state.posts.filter((p) => shortClip(p)).length : state.posts.filter((p) => f.kinds.includes(p.meta.kind)).length;
+    }
     return out;
   }, [state.posts]);
 
@@ -110,6 +114,7 @@ function Home({ state }: { state: AppState }) {
     const q = query.trim().toLowerCase();
     const kinds = FILTERS.find((f) => f.id === filter)?.kinds;
     let list = state.posts.filter((p) => {
+      if (kinds === "clips") return !!shortClip(p);
       if (kinds && !kinds.includes(p.meta.kind)) return false;
       if (person && members.get(p.author)?.key !== person) return false;
       if (!q) return true;
@@ -336,7 +341,7 @@ function Home({ state }: { state: AppState }) {
               onError={(m) => flash(m, true)}
             />
           ) : null}
-          <div className="mosaic-scroll" hidden={!!viewing}>
+          <div className="queue-scroll" hidden={!!viewing}>
             {state.posts.length === 0 && state.members.every((m) => m.you) && !createdHere ? (
               <div className="empty">
                 <div className="drop-box">
@@ -372,7 +377,7 @@ function Home({ state }: { state: AppState }) {
                 <p>Nothing matches that. Try another filter.</p>
               </div>
             ) : (
-              <Mosaic posts={visible} members={members} transfers={state.transfers} selectedId={selectedId} onOpen={openTile} />
+              <QueueGrid posts={visible} members={members} transfers={state.transfers} selectedId={selectedId} autoplay={state.settings.autoplayClips} onOpen={openTile} />
             )}
           </div>
           {selected ? (
