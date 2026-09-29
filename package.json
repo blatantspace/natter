@@ -18,7 +18,8 @@
     "appId": "guide.queueue.app",
     "productName": "queueue",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "build"
     },
     "files": [
       "out/**/*",
@@ -27,6 +28,12 @@
     "asarUnpack": [
       "**/*.node",
       "**/prebuilds/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
     ],
     "protocols": [
       {
@@ -42,6 +49,7 @@
         "dmg",
         "zip"
       ],
+      "icon": "build/icon.icns",
       "identity": "-",
       "hardenedRuntime": false
     }

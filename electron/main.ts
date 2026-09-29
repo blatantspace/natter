@@ -246,7 +246,22 @@ if (process.defaultApp && process.argv.length >= 2) {
   app.setAsDefaultProtocolClient("queueue");
 }
 
+function appIcon(): Electron.NativeImage | undefined {
+  const candidates = [
+    path.join(import.meta.dirname, "../../build/icon.png"),
+    path.join(process.resourcesPath, "icon.png"),
+    path.join(app.getAppPath(), "build", "icon.png"),
+  ];
+  for (const p of candidates) {
+    if (!fs.existsSync(p)) continue;
+    const img = nativeImage.createFromPath(p);
+    if (!img.isEmpty()) return img;
+  }
+}
+
 function createWindow() {
+  const icon = appIcon();
+  if (icon && process.platform === "darwin") app.dock?.setIcon(icon);
   win = new BrowserWindow({
     width: 1320,
     height: 880,
@@ -256,6 +271,7 @@ function createWindow() {
     backgroundColor: "#4a9a94",
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 14, y: 12 },
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: path.join(import.meta.dirname, "../preload/preload.cjs"),
       contextIsolation: true,
