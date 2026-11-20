@@ -97,7 +97,7 @@ app.get("/api/channels/:id/messages", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            (SELECT COUNT(*) FROM messages r WHERE r.parent_id = m.id) AS replyCount,
            (SELECT MAX(created_at) FROM messages r WHERE r.parent_id = m.id) AS lastReplyAt,
            p.display_name AS authorName, p.color AS authorColor
@@ -129,7 +129,7 @@ app.get("/api/messages/:id/thread", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            (SELECT COUNT(*) FROM messages r WHERE r.parent_id = m.id) AS replyCount,
            (SELECT MAX(created_at) FROM messages r WHERE r.parent_id = m.id) AS lastReplyAt,
            p.display_name AS authorName, p.color AS authorColor
@@ -149,7 +149,7 @@ app.get("/api/messages/:id/thread", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            p.display_name AS authorName, p.color AS authorColor
     FROM messages m
     JOIN people p ON p.id = m.author_id
@@ -193,7 +193,7 @@ app.get("/api/seeds", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            p.display_name AS authorName, p.color AS authorColor,
            c.name AS channelName, c.kind AS channelKind
     FROM messages m
@@ -246,7 +246,7 @@ app.get("/api/magnets/:infoHash/torrent", (req, res) => {
 app.post("/api/files/encrypted", (req, res) => {
   const uploaderId = String(req.headers["x-uploader-id"] || "unknown");
   if (!req.body || !req.body.length) {
-    return res.status(400).json({ error: "Empty encrypted body" });
+    return res.status(400).json({ error: "That upload had nothing in it. Nothing was saved." });
   }
 
   const fileId = `f_${nanoid(16)}`;
@@ -254,7 +254,7 @@ app.post("/api/files/encrypted", (req, res) => {
 
   fs.writeFile(filePath, req.body, (err) => {
     if (err) {
-      return res.status(500).json({ error: "Failed to store encrypted file on disk" });
+      return res.status(500).json({ error: "The file could not be saved on the server. Please try again." });
     }
 
     const sizeBytes = req.body.length || 0;

@@ -144,6 +144,7 @@ export function attachRealtime({ wss, db, onReady }) {
       infoHash: attachment?.infoHash || null,
       editedAt: null,
       deletedAt: null,
+      legacyEnc: 0,
     };
 
     broadcast({ type: "message.created", message });

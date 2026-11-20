@@ -46,7 +46,9 @@ export type Message = {
   deletedAt?: number | null;
   channelName?: string;
   filePayload?: import("./filePayload").FilePayload | null;
-  // Client-side decrypted state
+  // Set by the server for rows written while room-password encryption was on. Hidden, never deleted.
+  legacyEnc?: number | null;
+  // Client-side file state
   decryptedBody?: string;
   decryptedAttachmentUrl?: string;
 };
@@ -234,22 +236,6 @@ export function uploadBlob(
   });
 }
 
-export const ROOM_KEY_STORAGE = "natter.room_key";
-
-export function loadSavedRoomKey(): string {
-  const hashMatch = window.location.hash.match(/key=([a-f0-9]+)/i);
-  if (hashMatch && hashMatch[1]) {
-    const key = hashMatch[1];
-    localStorage.setItem(ROOM_KEY_STORAGE, key);
-    return key;
-  }
-  return localStorage.getItem(ROOM_KEY_STORAGE) || "canadian-sovereign-lounge-default-2026";
-}
-
-export function saveRoomKey(key: string) {
-  localStorage.setItem(ROOM_KEY_STORAGE, key);
-}
-
 export async function api<T>(
   path: string,
   init?: RequestInit
@@ -260,7 +246,9 @@ export async function api<T>(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return data as T;
 }

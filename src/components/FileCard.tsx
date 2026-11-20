@@ -6,7 +6,7 @@ import {
   isUriMagnet,
   SwarmPeer,
 } from "../filePayload";
-import { IconLock, IconFile, fileKindFromMime } from "./Icons";
+import { IconFile, fileKindFromMime } from "./Icons";
 
 export function FileCard({
   message,
@@ -61,11 +61,7 @@ export function FileCard({
           <div className="file-meta">
             {message.attachmentSize ? <span>{formatBytes(message.attachmentSize)}</span> : <span>magnet</span>}
             <span>•</span>
-            {uri ? (
-              <span className="swarm-tag">magnet</span>
-            ) : (
-              <span className="e2ee-tag"><IconLock size={11} /> Locked</span>
-            )}
+            {uri ? <span className="swarm-tag">magnet</span> : null}
             {message.infoHash && !uri ? (
               <>
                 <span>•</span>

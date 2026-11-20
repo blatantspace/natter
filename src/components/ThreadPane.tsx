@@ -283,7 +283,7 @@ export function ThreadPane({
     >
       {isDragging && (
         <div className="drop-overlay">
-          <div className="drop-hint"><IconDrop size={16} /> Drop file here to encrypt & reply in thread</div>
+          <div className="drop-hint"><IconDrop size={16} /> Drop file here to reply in thread</div>
         </div>
       )}
 
@@ -588,7 +588,7 @@ export function ThreadPane({
         )}
 
         {uploading && (
-          <UploadPill progress={uploadProgress} fallback="Encrypting and uploading file…" />
+          <UploadPill progress={uploadProgress} fallback="Uploading file…" />
         )}
         <div className="composer">
           <input
@@ -600,7 +600,7 @@ export function ThreadPane({
           <textarea
             ref={textareaRef}
             value={draft}
-            placeholder="Reply in thread (type @ to mention, drop files to encrypt)…"
+            placeholder="Reply in thread (type @ to mention, drop files to share)…"
             rows={1}
             onChange={(e) => handleDraftChange(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -611,7 +611,7 @@ export function ThreadPane({
                 type="button"
                 className="icon-btn"
                 onClick={() => fileInputRef.current?.click()}
-                title="Attach & Encrypt File"
+                title="Attach file"
                 style={{ fontSize: 18 }}
               >
                 <IconPaperclip size={16} />
