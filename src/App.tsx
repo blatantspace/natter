@@ -6,7 +6,7 @@ import {
   clearAuth,
   formatBytes,
   loadNotificationSetting,
-  loadSavedPerson,
+  clearPerson,
   loadSavedRoomKey,
   loadSavedToken,
   loadSoundSetting,
@@ -79,7 +79,9 @@ import { InviteModal } from "./components/InviteModal";
 
 export default function App() {
   const [boot, setBoot] = useState<Bootstrap | null>(null);
-  const [person, setPerson] = useState<Person | null>(() => loadSavedPerson());
+  const [person, setPerson] = useState<Person | null>(null);
+  // A saved login is only a hint. The server's answer decides who we are.
+  const [restoring, setRestoring] = useState<boolean>(() => Boolean(loadSavedToken()));
   const [channels, setChannels] = useState<Channel[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [online, setOnline] = useState<Person[]>([]);
@@ -174,26 +176,38 @@ export default function App() {
     }
   }, []);
 
-  // Verify saved token on load
+  // Verify saved token on load. The server's answer always wins over the browser's saved person.
   useEffect(() => {
     const savedToken = loadSavedToken();
-    if (savedToken) {
-      api<{ ok: boolean; person: Person; token: string; unreadCounts?: Record<string, number> }>("/api/auth/me", {
-        headers: { Authorization: `Bearer ${savedToken}` },
-      })
-        .then((res) => {
-          if (res.ok && res.person) {
-            saveAuth(res.person, res.token || savedToken);
-            setPerson(res.person);
-            if (res.unreadCounts) setUnreadCounts(res.unreadCounts);
-          }
-        })
-        .catch(() => {
-          // Token invalid or expired
-          clearAuth();
-          setPerson(null);
-        });
+    if (!savedToken) {
+      clearPerson();
+      setRestoring(false);
+      return;
     }
+    api<{ ok: boolean; person: Person; token: string; unreadCounts?: Record<string, number> }>("/api/auth/me", {
+      headers: { Authorization: `Bearer ${savedToken}` },
+    })
+      .then((res) => {
+        if (res.ok && res.person) {
+          saveAuth(res.person, res.token || savedToken);
+          setPerson(res.person);
+          if (res.unreadCounts) setUnreadCounts(res.unreadCounts);
+        } else {
+          clearAuth();
+          setError("Please log in again.");
+        }
+      })
+      .catch((err: Error & { status?: number }) => {
+        if (err.status === 401) {
+          // Bad token, or the person is gone: forget the saved login.
+          clearAuth();
+          setError("Please log in again.");
+        } else {
+          // Network trouble: keep the saved token so a refresh can retry.
+          setError("Can't reach Natter, try again.");
+        }
+      })
+      .finally(() => setRestoring(false));
   }, []);
 
   // Derive AES-GCM Key whenever roomKey changes
@@ -1471,6 +1485,10 @@ export default function App() {
         </div>
       </div>
     );
+  }
+
+  if (restoring) {
+    return <div className="app-loading">Signing you in...</div>;
   }
 
   if (!person) {

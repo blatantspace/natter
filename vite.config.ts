@@ -1,20 +1,23 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const apiPort = process.env.NATTER_API_PORT || "3847";
+const webPort = Number(process.env.NATTER_WEB_PORT || 5173);
+
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 5173,
+    port: webPort,
     host: true,
     allowedHosts: true,
     proxy: {
-      "/api": "http://localhost:3847",
+      "/api": `http://localhost:${apiPort}`,
       "/ws": {
-        target: "ws://localhost:3847",
+        target: `ws://localhost:${apiPort}`,
         ws: true,
       },
       "/tracker": {
-        target: "ws://localhost:3847",
+        target: `ws://localhost:${apiPort}`,
         ws: true,
       },
     },

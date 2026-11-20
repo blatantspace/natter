@@ -260,7 +260,9 @@ export async function api<T>(
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(data.error || `Request failed (${res.status})`);
+    const err = new Error(data.error || `Request failed (${res.status})`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
   return data as T;
 }
