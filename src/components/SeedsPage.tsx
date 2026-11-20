@@ -149,7 +149,7 @@ export function SeedsPage({
                 ? shareChannel.kind === "dm"
                   ? "New shares go to this DM. More seeds, faster Gets."
                   : `New shares go to #${shareChannel.name}. More seeds, faster Gets.`
-                : "Library of magnets and encrypted files in the lounge."}
+                : "Library of magnets and shared files in the lounge."}
             </div>
           </div>
         </div>

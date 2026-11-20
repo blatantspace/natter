@@ -436,9 +436,6 @@ export function MessagePane({
               </svg>
             </span>
           </button>
-          <span className="lock-pill" title="Messages encrypt on your device before they leave">
-            Locked
-          </span>
           <button
             className="ghost-btn"
             type="button"
@@ -699,7 +696,7 @@ export function MessagePane({
           </div>
         )}
         {uploading && (
-          <UploadPill progress={uploadProgress} fallback="Encrypting and uploading file…" />
+          <UploadPill progress={uploadProgress} fallback="Uploading file…" />
         )}
         <div className="composer">
           <input
@@ -726,7 +723,7 @@ export function MessagePane({
                 type="button"
                 className="icon-btn"
                 onClick={() => fileInputRef.current?.click()}
-                title="Attach & Encrypt File"
+                title="Attach file"
               >
                 <IconPaperclip size={16} />
               </button>

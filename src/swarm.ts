@@ -129,7 +129,7 @@ export async function getTorrentClient(): Promise<WebTorrentClient | null> {
   return clientPromise;
 }
 
-export async function seedCiphertext(
+export async function seedFileBytes(
   blob: Blob,
   fileId: string,
   timeoutMs = 12000
@@ -395,7 +395,7 @@ export async function downloadMagnetPayload(
   return torrentToCipherBlob(added, onProgress, 30000);
 }
 
-export async function downloadCiphertext(
+export async function downloadFileBytes(
   fileId: string,
   infoHash?: string,
   onProgress?: (ratio: number, label: string) => void
@@ -457,7 +457,7 @@ async function downloadViaHttp(
   onProgress?: (ratio: number, label: string) => void
 ): Promise<Blob> {
   const res = await fetch(`/api/files/${fileId}/raw`);
-  if (!res.ok) throw new Error(`Encrypted file not found (${res.status})`);
+  if (!res.ok) throw new Error(`File not found (${res.status})`);
   const total = Number(res.headers.get("content-length") || 0);
   if (!res.body || !total) {
     const buf = await res.arrayBuffer();

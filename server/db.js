@@ -129,6 +129,11 @@ function migrate(db) {
   if (!messageCols.some((c) => c.name === "deleted_at")) {
     db.exec(`ALTER TABLE messages ADD COLUMN deleted_at INTEGER;`);
   }
+  if (!messageCols.some((c) => c.name === "legacy_enc")) {
+    // Rows written while room-password encryption was on. Hidden in the app, kept in the database.
+    db.exec(`ALTER TABLE messages ADD COLUMN legacy_enc INTEGER NOT NULL DEFAULT 0;`);
+    db.exec(`UPDATE messages SET legacy_enc = 1 WHERE body LIKE 'ENC:%'`);
+  }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_info_hash
       ON messages(info_hash);
@@ -237,7 +242,7 @@ function seed(db) {
     const welcome = [
       {
         channel: "ch_general",
-        body: "Welcome to Natter. This is your private encrypted lounge. Slack vibes with zero friction.",
+        body: "Welcome to Natter. This is your private lounge. Slack vibes with zero friction.",
       },
       {
         channel: "ch_general",
@@ -333,6 +338,7 @@ export function getUnreadCounts(db, personId) {
       LEFT JOIN messages m ON m.channel_id = c.id
         AND m.author_id != ?
         AND m.deleted_at IS NULL
+        AND m.legacy_enc = 0
         AND m.created_at > COALESCE(cr.last_read_at, 0)
       WHERE c.kind = 'lounge' OR (c.kind = 'dm' AND (c.dm_user1_id = ? OR c.dm_user2_id = ?))
       GROUP BY c.id
@@ -357,7 +363,7 @@ export const MESSAGE_SELECT = `
   m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
   m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
   m.info_hash AS infoHash,
-  m.edited_at AS editedAt, m.deleted_at AS deletedAt
+  m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc
 `;
 
 export function fetchMessage(db, id) {

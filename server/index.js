@@ -97,7 +97,7 @@ app.get("/api/channels/:id/messages", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            (SELECT COUNT(*) FROM messages r WHERE r.parent_id = m.id) AS replyCount,
            (SELECT MAX(created_at) FROM messages r WHERE r.parent_id = m.id) AS lastReplyAt,
            p.display_name AS authorName, p.color AS authorColor
@@ -129,7 +129,7 @@ app.get("/api/messages/:id/thread", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            (SELECT COUNT(*) FROM messages r WHERE r.parent_id = m.id) AS replyCount,
            (SELECT MAX(created_at) FROM messages r WHERE r.parent_id = m.id) AS lastReplyAt,
            p.display_name AS authorName, p.color AS authorColor
@@ -149,7 +149,7 @@ app.get("/api/messages/:id/thread", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            p.display_name AS authorName, p.color AS authorColor
     FROM messages m
     JOIN people p ON p.id = m.author_id
@@ -193,7 +193,7 @@ app.get("/api/seeds", (req, res) => {
            m.attachment_type AS attachmentType, m.attachment_size AS attachmentSize,
            m.attachment_iv AS attachmentIv, m.parent_id AS parentId,
            m.info_hash AS infoHash,
-           m.edited_at AS editedAt, m.deleted_at AS deletedAt,
+           m.edited_at AS editedAt, m.deleted_at AS deletedAt, m.legacy_enc AS legacyEnc,
            p.display_name AS authorName, p.color AS authorColor,
            c.name AS channelName, c.kind AS channelKind
     FROM messages m

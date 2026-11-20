@@ -1,5 +1,5 @@
 import { UploadProgress } from "../lib";
-import { IconLock } from "./Icons";
+import { IconPaperclip } from "./Icons";
 
 export function UploadPill({
   progress,
@@ -15,7 +15,7 @@ export function UploadPill({
 
   return (
     <div className="upload-pill">
-      <span className="ui-icon"><IconLock size={14} /></span>
+      <span className="ui-icon"><IconPaperclip size={14} /></span>
       <div className="upload-pill-body">
         <span>{label}</span>
         {showBar && (

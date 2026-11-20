@@ -2,7 +2,7 @@
   "name": "natter",
   "version": "1.0.0",
   "private": true,
-  "description": "Slack-like private encrypted chat for you and your buds",
+  "description": "Slack-like private chat for you and your buds",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n server,web -c magenta,cyan \"npm run dev:server\" \"npm run dev:web\"",

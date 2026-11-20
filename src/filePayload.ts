@@ -1,6 +1,5 @@
-import { decryptFile, decryptText } from "./crypto";
 import { Message } from "./lib";
-import { downloadCiphertext, downloadMagnetPayload, parseMagnetURI } from "./swarm";
+import { downloadFileBytes, downloadMagnetPayload, parseMagnetURI } from "./swarm";
 
 export const FILE_PAYLOAD_TYPE = "magnet";
 export const AUTO_INLINE_MAX_BYTES = 8 * 1024 * 1024;
@@ -60,7 +59,7 @@ export function parseFilePayload(text: string): FilePayload | null {
       };
     }
 
-    if (typeof obj.fileId !== "string" || typeof obj.iv !== "string" || typeof obj.size !== "number") {
+    if (typeof obj.fileId !== "string" || typeof obj.size !== "number") {
       return null;
     }
     return {
@@ -72,7 +71,7 @@ export function parseFilePayload(text: string): FilePayload | null {
       name: obj.name,
       mime: obj.mime || "application/octet-stream",
       size: obj.size,
-      iv: obj.iv,
+      iv: typeof obj.iv === "string" ? obj.iv : undefined,
     };
   } catch {
     // not a file payload
@@ -94,10 +93,10 @@ export function libraryKey(msg: Message): string | null {
   return null;
 }
 
-export function applyFilePayload(msg: Message, decryptedText: string): Message {
-  const payload = parseFilePayload(decryptedText);
+export function applyFilePayload(msg: Message, text: string): Message {
+  const payload = parseFilePayload(text);
   if (!payload) {
-    return { ...msg, decryptedBody: decryptedText };
+    return { ...msg, decryptedBody: text };
   }
   return {
     ...msg,
@@ -112,11 +111,7 @@ export function applyFilePayload(msg: Message, decryptedText: string): Message {
   };
 }
 
-export async function decryptAndHydrateMessage(
-  msg: Message,
-  key: CryptoKey | null,
-  blobCache: Map<string, string>
-): Promise<Message> {
+export function hydrateMessage(msg: Message, blobCache: Map<string, string>): Message {
   if (msg.deletedAt) {
     return {
       ...msg,
@@ -131,17 +126,7 @@ export async function decryptAndHydrateMessage(
       decryptedAttachmentUrl: undefined,
     };
   }
-  let text = msg.body || "";
-  if (key && text.startsWith("ENC:")) {
-    try {
-      const parts = text.slice(4).split(":");
-      if (parts.length === 2) {
-        text = await decryptText(parts[0], parts[1], key);
-      }
-    } catch {
-      text = "[Encrypted message — mismatched room key]";
-    }
-  }
+  const text = msg.body || "";
 
   const hydrated = applyFilePayload(msg, text);
   const keyId = libraryKey(hydrated);
@@ -182,32 +167,22 @@ export function displayMessageText(msg: Message): string {
   if (msg.deletedAt) return "";
   if (msg.filePayload) return "";
   const text = msg.decryptedBody ?? msg.body ?? "";
-  if (text.startsWith("ENC:")) return "";
   return text;
 }
 
-export async function fetchAndDecryptNamedFile(opts: {
+export async function fetchNamedFile(opts: {
   fileId: string;
-  iv: string;
   mime: string;
   name: string;
   infoHash?: string;
-  key: CryptoKey;
   onProgress?: (ratio: number, label: string) => void;
 }): Promise<File> {
-  opts.onProgress?.(0.02, "Fetching encrypted blob…");
-  const cipher = await downloadCiphertext(opts.fileId, opts.infoHash, (ratio, label) => {
+  opts.onProgress?.(0.02, "Fetching file…");
+  const blob = await downloadFileBytes(opts.fileId, opts.infoHash, (ratio, label) => {
     opts.onProgress?.(Math.max(0.02, ratio), label);
   });
-  opts.onProgress?.(0.88, "Decrypting locally…");
-  const decrypted = await decryptFile(
-    await cipher.arrayBuffer(),
-    opts.iv,
-    opts.mime || "application/octet-stream",
-    opts.key
-  );
   opts.onProgress?.(1, "Ready");
-  return namedFileFromBlob(decrypted, opts.name, opts.mime);
+  return namedFileFromBlob(blob, opts.name, opts.mime);
 }
 
 export function guessMimeFromName(name: string, fallback = "application/octet-stream"): string {

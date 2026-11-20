@@ -7,7 +7,6 @@ import {
   formatBytes,
   loadNotificationSetting,
   clearPerson,
-  loadSavedRoomKey,
   loadSavedToken,
   loadSoundSetting,
   Message,
@@ -16,20 +15,13 @@ import {
   requestNotificationPermission,
   saveAuth,
   saveNotificationSetting,
-  saveRoomKey,
   showDesktopNotification,
   uploadBlob,
   UploadProgress,
 } from "./lib";
 import {
-  decryptText,
-  deriveKeyFromPassphrase,
-  encryptFile,
-  encryptText,
-} from "./crypto";
-import {
-  decryptAndHydrateMessage,
-  fetchAndDecryptNamedFile,
+  hydrateMessage,
+  fetchNamedFile,
   fetchNamedMagnet,
   FileTransfer,
   hasFileShare,
@@ -47,7 +39,7 @@ import {
   inspectTorrentInput,
   loungeMagnet,
   parseMagnetURI,
-  seedCiphertext,
+  seedFileBytes,
   uploadMagnetTorrent,
   uploadTorrentFile,
 } from "./swarm";
@@ -126,9 +118,6 @@ export default function App() {
   const [discovered, setDiscovered] = useState<Message[]>([]);
   const [posterByKey, setPosterByKey] = useState<Record<string, string>>({});
 
-  const [roomKey, setRoomKey] = useState<string>(() => loadSavedRoomKey());
-  const [cryptoKey, setCryptoKey] = useState<CryptoKey | null>(null);
-
   const wsRef = useRef<WebSocket | null>(null);
   const typingTimer = useRef<number | null>(null);
   const threadTypingTimer = useRef<number | null>(null);
@@ -136,12 +125,10 @@ export default function App() {
   activeIdRef.current = activeId;
   const activeThreadParentRef = useRef(activeThreadParent);
   activeThreadParentRef.current = activeThreadParent;
-  const cryptoKeyRef = useRef(cryptoKey);
-  cryptoKeyRef.current = cryptoKey;
   const blobCacheRef = useRef<Map<string, string>>(new Map());
   const lastSwarmSentRef = useRef<Record<string, number>>({});
   const fetchingRef = useRef<Set<string>>(new Set());
-  const shareEncryptedFileRef = useRef<
+  const shareFileRef = useRef<
     (file: File, parentId?: string, channelId?: string, signal?: AbortSignal) => Promise<void>
   >(async () => {});
   const uploadingRef = useRef(false);
@@ -210,13 +197,6 @@ export default function App() {
       .finally(() => setRestoring(false));
   }, []);
 
-  // Derive AES-GCM Key whenever roomKey changes
-  useEffect(() => {
-    deriveKeyFromPassphrase(roomKey).then((key) => {
-      setCryptoKey(key);
-    });
-  }, [roomKey]);
-
   const active = useMemo(
     () => channels.find((c) => c.id === activeId) || channels[0],
     [channels, activeId]
@@ -280,22 +260,10 @@ export default function App() {
   }, [person]);
 
   useEffect(() => {
-    if (!cryptoKey) {
-      setLibrary(libraryRaw);
-      return;
-    }
-    let isMounted = true;
-    async function decryptLibrary() {
-      const decrypted = await Promise.all(
-        libraryRaw.map((msg) => decryptAndHydrateMessage(msg, cryptoKey, blobCacheRef.current))
-      );
-      if (isMounted) setLibrary(decrypted);
-    }
-    decryptLibrary();
-    return () => {
-      isMounted = false;
-    };
-  }, [libraryRaw, cryptoKey]);
+    setLibrary(
+      libraryRaw.filter((msg) => !msg.legacyEnc).map((msg) => hydrateMessage(msg, blobCacheRef.current))
+    );
+  }, [libraryRaw]);
 
   // Window focus listener to clear active channel unreads
   useEffect(() => {
@@ -308,83 +276,36 @@ export default function App() {
     return () => window.removeEventListener("focus", handleFocus);
   }, [markChannelAsRead]);
 
-  // Decrypt raw messages and media blobs locally
+  // Read the file card out of each message, and start inline files. Old
+  // room-password rows (legacyEnc) are hidden but stay in the database.
   useEffect(() => {
-    if (!cryptoKey) {
-      setDecryptedMessages(rawMessages);
-      return;
-    }
+    const hydrated = rawMessages
+      .filter((msg) => !msg.legacyEnc)
+      .map((msg) => hydrateMessage(msg, blobCacheRef.current));
+    setDecryptedMessages(hydrated);
 
-    let isMounted = true;
-
-    async function decryptAll() {
-      const decrypted = await Promise.all(
-        rawMessages.map((msg) =>
-          decryptAndHydrateMessage(msg, cryptoKey, blobCacheRef.current)
-        )
-      );
-
-      if (!isMounted) return;
-      setDecryptedMessages(decrypted);
-
-      for (const msg of decrypted) {
-        if (
-          msg.attachmentId &&
-          msg.attachmentIv &&
-          !msg.decryptedAttachmentUrl &&
-          shouldAutoInline(msg)
-        ) {
-          handleFetchFile(msg, { silent: true });
-        } else if (msg.infoHash && msg.decryptedAttachmentUrl) {
-          announceSwarm(msg.infoHash, msg.attachmentId || undefined, "seed", 1);
-        }
+    for (const msg of hydrated) {
+      if (msg.attachmentId && !msg.decryptedAttachmentUrl && shouldAutoInline(msg)) {
+        handleFetchFile(msg, { silent: true });
+      } else if (msg.infoHash && msg.decryptedAttachmentUrl) {
+        announceSwarm(msg.infoHash, msg.attachmentId || undefined, "seed", 1);
       }
     }
+  }, [rawMessages]);
 
-    decryptAll();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [rawMessages, cryptoKey]);
-
-  // Decrypt active thread replies locally
+  // Same for the open thread's replies
   useEffect(() => {
-    if (!cryptoKey) {
-      setThreadDecryptedReplies(threadRawReplies);
-      return;
-    }
+    const hydrated = threadRawReplies
+      .filter((msg) => !msg.legacyEnc)
+      .map((msg) => hydrateMessage(msg, blobCacheRef.current));
+    setThreadDecryptedReplies(hydrated);
 
-    let isMounted = true;
-
-    async function decryptThreadReplies() {
-      const decrypted = await Promise.all(
-        threadRawReplies.map((msg) =>
-          decryptAndHydrateMessage(msg, cryptoKey, blobCacheRef.current)
-        )
-      );
-
-      if (!isMounted) return;
-      setThreadDecryptedReplies(decrypted);
-
-      for (const msg of decrypted) {
-        if (
-          msg.attachmentId &&
-          msg.attachmentIv &&
-          !msg.decryptedAttachmentUrl &&
-          shouldAutoInline(msg)
-        ) {
-          handleFetchFile(msg, { silent: true });
-        }
+    for (const msg of hydrated) {
+      if (msg.attachmentId && !msg.decryptedAttachmentUrl && shouldAutoInline(msg)) {
+        handleFetchFile(msg, { silent: true });
       }
     }
-
-    decryptThreadReplies();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [threadRawReplies, cryptoKey]);
+  }, [threadRawReplies]);
 
   useEffect(() => {
     if (!person) return;
@@ -442,20 +363,10 @@ export default function App() {
         if (msg.type === "message.created") {
           const m: Message = msg.message;
 
-          // Decrypt body on the fly to inspect for @mentions
+          // Look at the body for @mentions
           const checkMention = async (rawBody: string): Promise<{ mentioned: boolean; fileName?: string }> => {
             if (!rawBody || !person) return { mentioned: false };
-            let text = rawBody;
-            if (rawBody.startsWith("ENC:") && cryptoKeyRef.current) {
-              try {
-                const parts = rawBody.slice(4).split(":");
-                if (parts.length === 2) {
-                  text = await decryptText(parts[0], parts[1], cryptoKeyRef.current);
-                }
-              } catch {
-                // Ignore decryption failure
-              }
-            }
+            const text = rawBody;
             const payload = parseFilePayload(text);
             const myHandle = person.displayName.toLowerCase().replace(/\s+/g, "_");
             const myName = person.displayName.toLowerCase();
@@ -679,23 +590,13 @@ export default function App() {
       return;
     }
 
-    let payloadBody = body;
-    if (cryptoKey) {
-      try {
-        const enc = await encryptText(body, cryptoKey);
-        payloadBody = `ENC:${enc.ciphertext}:${enc.iv}`;
-      } catch (err) {
-        console.error("Encryption failed", err);
-      }
-    }
-
     if (typingTimer.current) window.clearTimeout(typingTimer.current);
     setTyping(null);
     wsRef.current.send(
       JSON.stringify({
         type: "message.send",
         channelId: active.id,
-        body: payloadBody,
+        body,
       })
     );
   }
@@ -707,21 +608,11 @@ export default function App() {
     }
     const trimmed = body.trim();
     if (!trimmed) return;
-    let payloadBody = trimmed;
-    if (cryptoKey) {
-      try {
-        const enc = await encryptText(trimmed, cryptoKey);
-        payloadBody = `ENC:${enc.ciphertext}:${enc.iv}`;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        return;
-      }
-    }
     wsRef.current.send(
       JSON.stringify({
         type: "message.edit",
         messageId: message.id,
-        body: payloadBody,
+        body: trimmed,
       })
     );
   }
@@ -780,15 +671,13 @@ export default function App() {
   }
 
   async function handleFetchFile(message: Message, opts?: { silent?: boolean }) {
-    const key = cryptoKeyRef.current;
     const cacheKey = libraryKey(message);
     if (!cacheKey) return;
     const uri = isUriMagnet(message);
     const fileId = message.attachmentId;
-    const iv = message.attachmentIv;
     const name = message.attachmentName || "download";
     const mime = message.attachmentType || "application/octet-stream";
-    if (!uri && (!key || !fileId || !iv)) return;
+    if (!uri && !fileId) return;
 
     const cached = blobCacheRef.current.get(cacheKey) || (fileId ? blobCacheRef.current.get(fileId) : undefined);
     if (cached) {
@@ -827,13 +716,11 @@ export default function App() {
           },
         });
       } else {
-        file = await fetchAndDecryptNamedFile({
+        file = await fetchNamedFile({
           fileId: fileId as string,
-          iv: iv as string,
           mime,
           name,
           infoHash: message.infoHash || undefined,
-          key: key as CryptoKey,
           onProgress: (ratio, label) => {
             setFileTransfers((prev) => ({
               ...prev,
@@ -870,36 +757,35 @@ export default function App() {
     setFolderCurrentKey(null);
   }
 
-  async function shareEncryptedFile(
+  async function shareFile(
     file: File,
     parentId?: string,
     channelId?: string,
     signal?: AbortSignal
   ) {
     const targetId = channelId || active?.id;
-    if (!cryptoKey || !targetId || !person) return;
+    if (!targetId || !person) return;
     const cancelled = () => Boolean(signal?.aborted);
     const setStatus = parentId ? setThreadUploadProgress : setUploadProgress;
     const setBusy = parentId ? setThreadUploading : setUploading;
     const setProgress = (label: string, ratio?: number) => setStatus({ label, ratio });
     setBusy(true);
-    setProgress(`Encrypting ${file.name} locally…`, 0);
+    setProgress(`Preparing ${file.name}…`, 0);
 
     try {
       if (cancelled()) throw new Error("Upload cancelled");
-      const enc = await encryptFile(file, cryptoKey);
       if (cancelled()) throw new Error("Upload cancelled");
-      setProgress("Uploading encrypted blob…", 0);
+      setProgress("Uploading file…", 0);
 
       const res = await uploadBlob(
         "/api/files/encrypted",
-        enc.encryptedBlob,
+        file,
         {
           "Content-Type": "application/octet-stream",
           "X-Uploader-Id": person.id,
         },
         (sent, total) => {
-          const size = total || enc.encryptedBlob.size;
+          const size = total || file.size;
           const ratio = size > 0 ? Math.min(1, sent / size) : 0;
           setProgress(`Uploading ${formatBytes(sent)} / ${formatBytes(size)} (${Math.round(ratio * 100)}%)`, ratio);
         },
@@ -917,9 +803,9 @@ export default function App() {
       blobCacheRef.current.set(fileId, localUrl);
 
       let infoHash: string | undefined;
-      setProgress("Seeding encrypted magnet…", 1);
+      setProgress("Seeding magnet…", 1);
       try {
-        const seeded = await seedCiphertext(enc.encryptedBlob, fileId);
+        const seeded = await seedFileBytes(file, fileId);
         if (seeded) {
           infoHash = seeded.infoHash;
           blobCacheRef.current.set(`hash:${infoHash}`, localUrl);
@@ -940,9 +826,7 @@ export default function App() {
         name: file.name,
         mime: file.type || "application/octet-stream",
         size: file.size,
-        iv: enc.iv,
       });
-      const encBody = await encryptText(payload, cryptoKey);
       if (cancelled()) throw new Error("Upload cancelled");
 
       if (parentId) {
@@ -959,7 +843,7 @@ export default function App() {
           type: "message.send",
           channelId: targetId,
           parentId: parentId || undefined,
-          body: `ENC:${encBody.ciphertext}:${encBody.iv}`,
+          body: payload,
           attachment: { id: fileId, infoHash: infoHash || null },
         })
       );
@@ -973,10 +857,10 @@ export default function App() {
       setStatus(null);
     }
   }
-  shareEncryptedFileRef.current = shareEncryptedFile;
+  shareFileRef.current = shareFile;
 
   useEffect(() => {
-    if (!person || !cryptoKey || !folderWatch) {
+    if (!person || !folderWatch) {
       if (!folderWatch) {
         setFolderQueue([]);
         setFolderWatchStatus(null);
@@ -1015,14 +899,14 @@ export default function App() {
           if (!enabled) {
             setFolderWatchStatus(`Paused · ${waiting} waiting in ${folderName}`);
           } else if (uploadingRef.current) {
-            // shareEncryptedFile owns the status line
+            // shareFile owns the status line
           } else if (next?.file && !isBlacklisted(next.name)) {
             const ctrl = new AbortController();
             folderAbortRef.current = ctrl;
             setFolderCurrentKey(next.key);
             setFolderWatchStatus(`Seeding ${next.name}…`);
             try {
-              await shareEncryptedFileRef.current(next.file, undefined, channelId, ctrl.signal);
+              await shareFileRef.current(next.file, undefined, channelId, ctrl.signal);
               if (!ctrl.signal.aborted) {
                 markVideoSeen(next.key);
                 if (!cancelled) setFolderWatchStatus(`Seeded ${next.name}`);
@@ -1059,10 +943,10 @@ export default function App() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [person, cryptoKey, folderWatch]);
+  }, [person, folderWatch]);
 
   async function shareMagnetUri(raw: string, parentId?: string) {
-    if (!cryptoKey || !active || !person) return;
+    if (!active || !person) return;
     const parsed = parseMagnetURI(raw);
     if (!parsed) {
       setError("That does not look like a magnet link.");
@@ -1084,7 +968,6 @@ export default function App() {
         mime: "application/x-bittorrent",
         size: 0,
       });
-      const encBody = await encryptText(payload, cryptoKey);
       if (parentId) {
         if (threadTypingTimer.current) window.clearTimeout(threadTypingTimer.current);
         setThreadTyping(null);
@@ -1097,7 +980,7 @@ export default function App() {
           type: "message.send",
           channelId: active.id,
           parentId: parentId || undefined,
-          body: `ENC:${encBody.ciphertext}:${encBody.iv}`,
+          body: payload,
           attachment: { infoHash: parsed.infoHash },
         })
       );
@@ -1117,7 +1000,7 @@ export default function App() {
         return;
       }
     }
-    if (!cryptoKey || !active || !person) return;
+    if (!active || !person) return;
     const setStatus = parentId ? setThreadUploadProgress : setUploadProgress;
     const setBusy = parentId ? setThreadUploading : setUploading;
     setBusy(true);
@@ -1141,13 +1024,12 @@ export default function App() {
         mime: "application/x-bittorrent",
         size: 0,
       });
-      const encBody = await encryptText(payload, cryptoKey);
       wsRef.current?.send(
         JSON.stringify({
           type: "message.send",
           channelId: active.id,
           parentId: parentId || undefined,
-          body: `ENC:${encBody.ciphertext}:${encBody.iv}`,
+          body: payload,
           attachment: { infoHash: inspected.infoHash },
         })
       );
@@ -1164,7 +1046,7 @@ export default function App() {
       await shareMagnetFile(file);
       return;
     }
-    await shareEncryptedFile(file);
+    await shareFile(file);
   }
 
   function handleTyping() {
@@ -1218,11 +1100,7 @@ export default function App() {
       const res = await api<{ parent: Message; replies: Message[] }>(
         `/api/messages/${message.id}/thread`
       );
-      const hydrated = await decryptAndHydrateMessage(
-        res.parent,
-        cryptoKeyRef.current,
-        blobCacheRef.current
-      );
+      const hydrated = hydrateMessage(res.parent, blobCacheRef.current);
       setActiveThreadParent((prev) => ({
         ...hydrated,
         decryptedAttachmentUrl:
@@ -1254,16 +1132,6 @@ export default function App() {
       return;
     }
 
-    let payloadBody = body;
-    if (cryptoKey) {
-      try {
-        const enc = await encryptText(body, cryptoKey);
-        payloadBody = `ENC:${enc.ciphertext}:${enc.iv}`;
-      } catch (err) {
-        console.error("Encryption failed", err);
-      }
-    }
-
     if (threadTypingTimer.current) window.clearTimeout(threadTypingTimer.current);
     setThreadTyping(null);
     wsRef.current.send(
@@ -1271,7 +1139,7 @@ export default function App() {
         type: "message.send",
         channelId: active.id,
         parentId,
-        body: payloadBody,
+        body,
       })
     );
   }
@@ -1281,7 +1149,7 @@ export default function App() {
       await shareMagnetFile(file, parentId);
       return;
     }
-    await shareEncryptedFile(file, parentId);
+    await shareFile(file, parentId);
   }
 
   function handleThreadTyping(parentId: string) {
@@ -1439,11 +1307,6 @@ export default function App() {
       prev.map((row) => (row.key === item.key ? { ...row, status: "skipped", file: undefined } : row))
     );
     if (folderCurrentKey === item.key) abortFolderWatchUpload();
-  }
-
-  function handleKeyChange(newKey: string) {
-    saveRoomKey(newKey);
-    setRoomKey(newKey);
   }
 
   if (!boot) {
@@ -1698,11 +1561,7 @@ export default function App() {
       )}
 
       {showInvite && (
-        <InviteModal
-          currentKey={roomKey}
-          onClose={() => setShowInvite(false)}
-          onKeyChange={handleKeyChange}
-        />
+        <InviteModal onClose={() => setShowInvite(false)} />
       )}
     </div>
   );
