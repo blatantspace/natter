@@ -7,8 +7,16 @@
 //   Remove (needs all of these, and a backup folder you can write to):
 //     node server/scripts/cleanup-test-people.js --db <path> --delete \
 //       --ids id1,id2 --list-code <code from the dry run> --backup-dir <folder> \
-//       [--move-messages-to <id>]
+//       [--move-messages-to <id>] [--delete-own-messages] [--delete-dm-messages]
 //
+// What happens to a person's words (nothing is ever filed under anyone by default):
+//   --move-messages-to <id>   their messages and files go to that person
+//   --delete-own-messages     their messages and file records are deleted
+//   --delete-dm-messages      each direct message they are in is deleted, with every
+//                             message in it (other people's too), then the chat itself
+//   The dry run says exactly whose messages would go. Use --ids in the dry run to preview
+//   one group, plus the two flags to see what they would do.
+
 // The main account and the system account are never listed and never removed.
 // A person with messages is skipped unless --move-messages-to says who gets them.
 import Database from "better-sqlite3";
@@ -34,6 +42,8 @@ function parseArgs(argv) {
     else if (a === "--list-code") out.listCode = argv[++i];
     else if (a === "--backup-dir") out.backupDir = argv[++i];
     else if (a === "--move-messages-to") out.moveTo = argv[++i];
+    else if (a === "--delete-own-messages") out.deleteOwn = true;
+    else if (a === "--delete-dm-messages") out.deleteDm = true;
     else fail(`Unknown option: ${a}`);
   }
   return out;
@@ -73,8 +83,63 @@ function listCode(ids) {
   return crypto.createHash("sha256").update([...ids].sort().join(",")).digest("hex").slice(0, 8);
 }
 
+function plural(n, word) {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+// Works out what would happen to one person. Changes nothing.
+function planFor(db, id, args, names) {
+  const own = db.prepare(`SELECT id FROM messages WHERE author_id = ?`).all(id).map((r) => r.id);
+  const files = db.prepare(`SELECT count(*) AS n FROM encrypted_files WHERE uploader_id = ?`).get(id).n;
+  const dms = db
+    .prepare(`SELECT id FROM channels WHERE dm_user1_id = ? OR dm_user2_id = ?`)
+    .all(id, id)
+    .map((r) => r.id);
+  const dmMsgs = dms.length
+    ? db
+        .prepare(`SELECT id, author_id FROM messages WHERE channel_id IN (${dms.map(() => "?").join(",")})`)
+        .all(...dms)
+    : [];
+  const dmCount = dmMsgs.length;
+  const others = new Map(); // author name -> count, other people's messages that would go with the DMs
+  for (const m of dmMsgs) {
+    if (m.author_id === id) continue;
+    const n = names.get(m.author_id) || m.author_id;
+    others.set(n, (others.get(n) || 0) + 1);
+  }
+  const problems = [];
+  if (args.deleteOwn && args.moveTo) problems.push("--delete-own-messages and --move-messages-to cannot be used together");
+  if ((own.length || files) && !args.moveTo && !args.deleteOwn) {
+    problems.push(`has ${plural(own.length, "message")} and ${plural(files, "file")}, use --move-messages-to or --delete-own-messages`);
+  }
+  if (dmCount && !args.deleteDm) {
+    problems.push(`is in direct messages with ${plural(dmCount, "message")}, use --delete-dm-messages`);
+  }
+  return { id, own, files, dms, dmMsgs, dmCount, others, problems };
+}
+
+function describePlan(plan, name) {
+  const lines = [];
+  lines.push(`  ${plan.id} (${name})`);
+  if (plan.problems.length) lines.push(`    would be skipped: ${plan.problems.join("; ")}`);
+  else lines.push("    would be removed");
+  lines.push(`    own messages: ${plan.own.length}, file records: ${plan.files}`);
+  lines.push(`    direct messages: ${plan.dms.length}, messages in them: ${plan.dmCount}`);
+  if (plan.others.size) {
+    const list = [...plan.others].map(([n, c]) => `${n} ${c}`).join(", ");
+    lines.push(`    other people's messages that go with the direct messages: ${list}`);
+  } else {
+    lines.push("    other people's messages that go with the direct messages: none");
+  }
+  return lines;
+}
+
 const args = parseArgs(process.argv.slice(2));
 if (!args.db) fail("Say which database with --db <path>. Nothing done.");
+if (args.deleteOwn && args.moveTo) fail("Pick one, --delete-own-messages or --move-messages-to, not both. Nothing done.");
+if ((args.deleteOwn || args.deleteDm) && !args.delete) {
+  // Allowed in a dry run, so the preview can show what the flags would do.
+}
 
 // Protected people can never be asked for, in any mode.
 for (const id of args.ids) {
@@ -91,6 +156,10 @@ try {
 } catch (err) {
   fail(`Could not open ${args.db}: ${err.message}. Nothing done.`);
 }
+db.pragma("foreign_keys = ON");
+const allPeople = db.prepare(`SELECT id, display_name FROM people`).all();
+const byId = new Map(allPeople.map((p) => [p.id, p]));
+const names = new Map(allPeople.map((p) => [p.id, p.display_name]));
 
 if (!args.delete) {
   const list = listCandidates(db);
@@ -99,6 +168,17 @@ if (!args.delete) {
     console.log(`${p.id}\t${p.display_name}\t${p.messages} messages\t${p.tokens} tokens\t${p.why}`);
   }
   if (list.length) console.log(`List code: ${listCode(list.map((p) => p.id))} (all ${list.length} listed)`);
+  const listedIds = new Set(list.map((p) => p.id));
+  for (const id of args.ids) {
+    if (!byId.has(id)) fail(`No person with id ${id}. Nothing done.`);
+    if (!listedIds.has(id)) fail(`${id} is not on the test list. Nothing done.`);
+  }
+  const preview = args.ids.length ? args.ids : list.map((p) => p.id);
+  if (preview.length && (args.ids.length || args.deleteOwn || args.deleteDm || args.moveTo)) {
+    console.log("");
+    console.log("What a delete with these choices would do:");
+    for (const id of preview) for (const l of describePlan(planFor(db, id, args, names), names.get(id))) console.log(l);
+  }
   console.log("Dry run. Nothing deleted.");
   db.close();
   process.exit(0);
@@ -109,8 +189,6 @@ if (!args.ids.length) fail("Delete needs an exact list: --ids id1,id2. Nothing d
 if (!args.listCode) fail("Delete needs --list-code from the dry run. Nothing deleted.");
 if (!args.backupDir) fail("Delete needs --backup-dir <folder>. Nothing deleted.");
 
-const rows = db.prepare(`SELECT id, display_name FROM people`).all();
-const byId = new Map(rows.map((p) => [p.id, p]));
 for (const id of args.ids) {
   const p = byId.get(id);
   if (!p) fail(`No person with id ${id}. Nothing deleted.`);
@@ -139,53 +217,62 @@ try {
   fail(`Can't write the backup to ${args.backupDir}. Nothing deleted.`);
 }
 
-// Work out who can go. Someone with messages needs somewhere for them to move.
-const toRemove = [];
-const skipped = [];
-for (const id of args.ids) {
-  const msgs = db.prepare(`SELECT count(*) AS n FROM messages WHERE author_id = ?`).get(id).n;
-  const files = db.prepare(`SELECT count(*) AS n FROM encrypted_files WHERE uploader_id = ?`).get(id).n;
-  const dmMsgs = db
-    .prepare(
-      `SELECT count(*) AS n FROM messages WHERE channel_id IN
-         (SELECT id FROM channels WHERE dm_user1_id = ? OR dm_user2_id = ?)`
-    )
-    .get(id, id).n;
-  if ((msgs || files) && !args.moveTo) {
-    skipped.push(`${id}: has ${msgs} messages and ${files} files, use --move-messages-to to keep them`);
-  } else if (dmMsgs) {
-    skipped.push(`${id}: is in a direct message with ${dmMsgs} messages, left alone`);
-  } else {
-    toRemove.push(id);
+// Work out who can go.
+const plans = args.ids.map((id) => planFor(db, id, args, names));
+const toRemove = plans.filter((p) => !p.problems.length);
+const skipped = plans.filter((p) => p.problems.length);
+
+// Back up first, unless there is nothing to remove.
+if (toRemove.length) {
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupFile = path.join(args.backupDir, `natter-backup-${stamp}.db`);
+  try {
+    db.exec(`VACUUM INTO '${backupFile.replace(/'/g, "''")}'`);
+  } catch (err) {
+    fail(`Can't write the backup to ${args.backupDir}: ${err.message}. Nothing deleted.`);
   }
+  console.log(`Backup written: ${backupFile}`);
+} else {
+  console.log("Nothing to remove, so no backup was made.");
 }
 
-const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-const backupFile = path.join(args.backupDir, `natter-backup-${stamp}.db`);
-try {
-  db.exec(`VACUUM INTO '${backupFile.replace(/'/g, "''")}'`);
-} catch (err) {
-  fail(`Can't write the backup to ${args.backupDir}: ${err.message}. Nothing deleted.`);
-}
-console.log(`Backup written: ${backupFile}`);
-
+// One transaction for everything. If any step fails, nothing changes.
 const run = db.transaction(() => {
-  for (const id of toRemove) {
+  for (const plan of toRemove) {
+    const id = plan.id;
+    // Direct messages first: every message in them, then the chat.
+    for (const ch of plan.dms) {
+      db.prepare(`DELETE FROM messages WHERE channel_id = ?`).run(ch);
+      db.prepare(`DELETE FROM channels WHERE id = ?`).run(ch);
+    }
     if (args.moveTo) {
       db.prepare(`UPDATE messages SET author_id = ? WHERE author_id = ?`).run(args.moveTo, id);
       db.prepare(`UPDATE encrypted_files SET uploader_id = ? WHERE uploader_id = ?`).run(args.moveTo, id);
+    } else if (args.deleteOwn) {
+      db.prepare(`DELETE FROM messages WHERE author_id = ?`).run(id);
+      db.prepare(`DELETE FROM encrypted_files WHERE uploader_id = ?`).run(id);
     }
-    db.prepare(`DELETE FROM channels WHERE dm_user1_id = ? OR dm_user2_id = ?`).run(id, id);
     db.prepare(`DELETE FROM device_tokens WHERE person_id = ?`).run(id);
     db.prepare(`DELETE FROM channel_reads WHERE person_id = ?`).run(id);
     db.prepare(`DELETE FROM reactions WHERE person_id = ?`).run(id);
     db.prepare(`DELETE FROM people WHERE id = ?`).run(id);
   }
+  // A reply whose first message is gone becomes a plain message.
+  if (toRemove.length) {
+    db.prepare(`UPDATE messages SET parent_id = NULL WHERE parent_id IS NOT NULL AND parent_id NOT IN (SELECT id FROM messages)`).run();
+  }
+  const bad = db.prepare(`PRAGMA foreign_key_check`).all();
+  if (bad.length) throw new Error(`${bad.length} rows would point at something missing`);
 });
-run();
-for (const id of toRemove) console.log(`Removed ${id} (${byId.get(id).display_name})`);
-for (const s of skipped) console.log(`Skipped ${s}`);
-const bad = db.prepare(`PRAGMA foreign_key_check`).all();
-if (bad.length) console.error(`Warning: ${bad.length} rows point at something missing.`);
+try {
+  run();
+} catch (err) {
+  fail(`Stopped, nothing was changed: ${err.message}.`);
+}
+for (const p of toRemove) {
+  const gone = [...p.others].map(([n, c]) => `${n} ${c}`).join(", ");
+  console.log(`Removed ${p.id} (${byId.get(p.id).display_name})${gone ? `, with other people's messages: ${gone}` : ""}`);
+}
+for (const p of skipped) console.log(`Skipped ${p.id}: ${p.problems.join("; ")}`);
 console.log(`Done. Removed ${toRemove.length}, skipped ${skipped.length}.`);
 db.close();

@@ -246,7 +246,7 @@ app.get("/api/magnets/:infoHash/torrent", (req, res) => {
 app.post("/api/files/encrypted", (req, res) => {
   const uploaderId = String(req.headers["x-uploader-id"] || "unknown");
   if (!req.body || !req.body.length) {
-    return res.status(400).json({ error: "Empty encrypted body" });
+    return res.status(400).json({ error: "That upload had nothing in it. Nothing was saved." });
   }
 
   const fileId = `f_${nanoid(16)}`;
@@ -254,7 +254,7 @@ app.post("/api/files/encrypted", (req, res) => {
 
   fs.writeFile(filePath, req.body, (err) => {
     if (err) {
-      return res.status(500).json({ error: "Failed to store encrypted file on disk" });
+      return res.status(500).json({ error: "The file could not be saved on the server. Please try again." });
     }
 
     const sizeBytes = req.body.length || 0;

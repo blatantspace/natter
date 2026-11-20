@@ -131,8 +131,11 @@ function migrate(db) {
   }
   if (!messageCols.some((c) => c.name === "legacy_enc")) {
     // Rows written while room-password encryption was on. Hidden in the app, kept in the database.
-    db.exec(`ALTER TABLE messages ADD COLUMN legacy_enc INTEGER NOT NULL DEFAULT 0;`);
-    db.exec(`UPDATE messages SET legacy_enc = 1 WHERE body LIKE 'ENC:%'`);
+    // One transaction, so a crash cannot leave the column added but the old rows unflagged.
+    db.transaction(() => {
+      db.exec(`ALTER TABLE messages ADD COLUMN legacy_enc INTEGER NOT NULL DEFAULT 0;`);
+      db.exec(`UPDATE messages SET legacy_enc = 1 WHERE body LIKE 'ENC:%'`);
+    })();
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_messages_info_hash
